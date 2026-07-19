@@ -44,6 +44,21 @@ create table if not exists public.hazard_events (
   created_at timestamptz not null default now()
 );
 
+-- AI proxy usage log (rate limiting + cost telemetry — see ADR-0001)
+-- Written only by the ai-proxy Edge Function via the service role; no client access.
+create table if not exists public.ai_usage (
+  id bigserial primary key,
+  user_id uuid not null,
+  provider text not null,
+  status integer not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists ai_usage_user_created_idx on public.ai_usage(user_id, created_at desc);
+
+alter table public.ai_usage enable row level security;
+-- No policies on purpose: service role bypasses RLS; clients get nothing.
+
 -- Indexes
 create index if not exists sessions_user_id_idx on public.sessions(user_id);
 create index if not exists sessions_start_time_idx on public.sessions(start_time desc);
