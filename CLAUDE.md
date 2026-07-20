@@ -89,11 +89,13 @@ EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=   # Maps SDK for iOS + Directions API
 EXPO_PUBLIC_SUPABASE_URL=
 EXPO_PUBLIC_SUPABASE_ANON_KEY=
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=  # Google OAuth
-EXPO_PUBLIC_ANTHROPIC_API_KEY=     # TEMPORARY client-side — moving to Edge Function proxy (ADR-0001)
-EXPO_PUBLIC_OPENAI_API_KEY=        # OpenAI TTS — same caveat as above
+ANTHROPIC_API_KEY=                 # Server-side only — lives in Edge Function secrets, NOT bundled
+OPENAI_API_KEY=                    # Same — set both via `supabase secrets set`
 EXPO_PUBLIC_DEV_DEST_LAT=          # Optional: fixes route destination for simulator testing
 EXPO_PUBLIC_DEV_DEST_LNG=          # Remove for production (enables random destinations)
 ```
+
+All AI calls (Claude conversation/evaluation, OpenAI TTS) go through the `ai-proxy` Edge Function via `src/services/aiTransport.ts` (ADR-0001) — the client authenticates with the user's Supabase JWT and holds no provider keys.
 
 ## Testing
 

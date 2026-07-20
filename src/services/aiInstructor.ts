@@ -1,8 +1,7 @@
 import { RouteStep, Coordinate } from '../types';
+import { callAIProxy } from './aiTransport';
 
-const API_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-haiku-4-5-20251001';
-const ANTHROPIC_API_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
 const MAX_HISTORY_PAIRS = 8;
 
 export interface NavigationContext {
@@ -56,34 +55,12 @@ async function callClaude(userMessage: string): Promise<string> {
     { role: 'user', content: userMessage },
   ];
 
-  const controller = new AbortController();
-  const fetchTimeout = setTimeout(() => controller.abort(), 10_000);
-
-  let response: Response;
-  try {
-    response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 120,
-        system: SYSTEM_PROMPT,
-        messages,
-      }),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(fetchTimeout);
-  }
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(`Claude API ${response.status}: ${(err as any)?.error?.message ?? 'unknown'}`);
-  }
+  const response = await callAIProxy('anthropic', {
+    model: MODEL,
+    max_tokens: 120,
+    system: SYSTEM_PROMPT,
+    messages,
+  });
 
   const data = await response.json();
   const text = (data.content as { type: string; text: string }[])

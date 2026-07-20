@@ -3,8 +3,7 @@ import { Audio } from 'expo-av';
 import { NZ_DRIVING } from '../constants/nzDriving';
 import { setTTSPlaying } from './audioState';
 
-const OPENAI_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? '';
-const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
+import { callAIProxy } from './aiTransport';
 
 let selectedVoiceId: string | undefined;
 let activeSound: Audio.Sound | null = null;
@@ -44,24 +43,10 @@ export async function initTTSVoice(): Promise<void> {
   } catch {}
 }
 
-// ─── OpenAI TTS ───────────────────────────────────────────────────────────────
+// ─── OpenAI TTS (via ai-proxy Edge Function — ADR-0001) ──────────────────────
 
 async function speakOpenAI(text: string, callId: number): Promise<void> {
-  const controller = new AbortController();
-  const fetchTimeout = setTimeout(() => controller.abort(), 8000);
-
-  let resp: Response;
-  try {
-    resp = await fetch(OPENAI_TTS_URL, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'tts-1', voice: 'onyx', input: text, speed: 0.92 }),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(fetchTimeout);
-  }
-  if (!resp.ok) throw new Error(`OpenAI TTS ${resp.status}`);
+  const resp = await callAIProxy('openai-tts', { input: text, voice: 'onyx', speed: 0.92 }, 8000);
   if (activeCallId !== callId) return; // was interrupted
 
   const buffer = await resp.arrayBuffer();
@@ -130,13 +115,11 @@ export async function speak(text: string): Promise<void> {
   const myId = ++activeCallId;
   setTTSPlaying(true);
   try {
-    if (OPENAI_KEY) {
-      await speakOpenAI(text, myId).catch(() => {
-        if (activeCallId === myId) return speakNative(text, myId);
-      });
-    } else {
-      await speakNative(text, myId);
-    }
+    // Proxy TTS first; falls back to on-device voice instantly when there is
+    // no session (guest) and on any proxy/network error.
+    await speakOpenAI(text, myId).catch(() => {
+      if (activeCallId === myId) return speakNative(text, myId);
+    });
   } finally {
     if (activeCallId === myId) setTTSPlaying(false);
   }

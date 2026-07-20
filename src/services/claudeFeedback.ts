@@ -1,29 +1,18 @@
 import { DrivingSession } from '../types';
+import { callAIProxy } from './aiTransport';
 
-const API_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL_EVAL = 'claude-haiku-4-5-20251001';     // scoring tasks: fast, cheap, sufficient
 const MODEL_FEEDBACK = 'claude-sonnet-4-6';          // narrative feedback: quality matters
-const ANTHROPIC_API_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
 
 async function callClaude(prompt: string, maxTokens: number, model = MODEL_EVAL): Promise<string> {
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  // The end-of-session debrief (Sonnet, 700 tokens) can exceed the default 10 s
+  const timeoutMs = model === MODEL_FEEDBACK ? 30_000 : 10_000;
+  const response = await callAIProxy('anthropic', {
+    model,
+    max_tokens: maxTokens,
+    messages: [{ role: 'user', content: prompt }],
+  }, timeoutMs);
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(`Claude API error ${response.status}: ${(err as any)?.error?.message ?? 'unknown'}`);
-  }
   const data = await response.json();
   return (data.content as { type: string; text: string }[])
     .filter((b) => b.type === 'text')

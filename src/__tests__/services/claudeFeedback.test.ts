@@ -1,5 +1,14 @@
 import { evaluateHazardResponse, evaluateKnowledgeResponse } from '../../services/claudeFeedback';
 
+// aiTransport authenticates against Supabase — mock the session out
+jest.mock('../../services/supabase', () => ({
+  supabase: {
+    auth: {
+      getSession: async () => ({ data: { session: { access_token: 'test-token' } } }),
+    },
+  },
+}));
+
 function mockFetchOk(text: string) {
   return jest.spyOn(global, 'fetch').mockResolvedValueOnce({
     ok: true,

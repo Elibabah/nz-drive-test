@@ -4,6 +4,15 @@ import {
 } from '../../services/aiInstructor';
 import type { NavigationContext } from '../../services/aiInstructor';
 
+// aiTransport authenticates against Supabase — mock the session out
+jest.mock('../../services/supabase', () => ({
+  supabase: {
+    auth: {
+      getSession: async () => ({ data: { session: { access_token: 'test-token' } } }),
+    },
+  },
+}));
+
 const CTX: NavigationContext = {
   position: { latitude: -36.84, longitude: 174.76 },
   nextStep: {
@@ -54,20 +63,21 @@ describe('getSessionStartMessage', () => {
     expect(msg).toContain('20-minute');
   });
 
-  it('calls the Anthropic API URL', async () => {
+  it('calls the ai-proxy Edge Function, never a provider API directly', async () => {
     const spy = mockFetchOk('hello');
     await getSessionStartMessage();
     expect(spy).toHaveBeenCalledWith(
-      'https://api.anthropic.com/v1/messages',
+      expect.stringContaining('/functions/v1/ai-proxy'),
       expect.objectContaining({ method: 'POST' })
     );
   });
 
-  it('sends anthropic-version header', async () => {
+  it('sends provider + haiku model in the proxy payload', async () => {
     const spy = mockFetchOk('hello');
     await getSessionStartMessage();
     const body = JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.model).toContain('haiku');
+    expect(body.provider).toBe('anthropic');
+    expect(body.payload.model).toContain('haiku');
   });
 });
 
@@ -155,7 +165,7 @@ describe('conversation history', () => {
 
     const secondBody = JSON.parse((spy.mock.calls[1][1] as RequestInit).body as string);
     // history has user+assistant from first call, plus current user message
-    expect(secondBody.messages.length).toBeGreaterThanOrEqual(3);
+    expect(secondBody.payload.messages.length).toBeGreaterThanOrEqual(3);
   });
 
   it('resetConversation clears history so next call has only 1 message', async () => {
@@ -169,6 +179,6 @@ describe('conversation history', () => {
     await getSessionStartMessage();
 
     const afterResetBody = JSON.parse((spy.mock.calls[1][1] as RequestInit).body as string);
-    expect(afterResetBody.messages).toHaveLength(1);
+    expect(afterResetBody.payload.messages).toHaveLength(1);
   });
 });

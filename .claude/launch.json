@@ -3,14 +3,14 @@
   "configurations": [
     {
       "name": "expo-metro",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["expo", "start", "--clear"],
+      "runtimeExecutable": "/Users/elibabah/.nvm/versions/node/v24.13.1/bin/node",
+      "runtimeArgs": ["node_modules/expo/bin/cli", "start", "--clear"],
       "port": 8081
     },
     {
       "name": "expo-web",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["expo", "start", "--web"],
+      "runtimeExecutable": "/Users/elibabah/.nvm/versions/node/v24.13.1/bin/node",
+      "runtimeArgs": ["node_modules/expo/bin/cli", "start", "--web"],
       "port": 8081
     }
   ]
