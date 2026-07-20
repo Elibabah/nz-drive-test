@@ -28,10 +28,10 @@ No new user-facing features. The app does what it does today, but safely and rel
 - Docs truth pass: CLAUDE.md matches the code; `simulate_drive.sh` regenerated or replaced (see MVP-4 replayer).
 
 **Exit criteria**
-- [ ] No provider API key extractable from the app bundle.
+- [x] No provider API key extractable from the app bundle. *(2026-07-20: ai-proxy live, verified on device — 17 proxied calls in `ai_usage`)*
 - [ ] Killing the app mid-session and reopening shows the partial session in history.
-- [ ] A 1 km straight step does not trigger a reroute when driven normally.
-- [ ] CI green; suite < 60 s.
+- [x] A 1 km straight step does not trigger a reroute when driven normally. *(2026-07-20: off-route now measured against step polyline; unit-tested)*
+- [ ] CI green; suite < 60 s. *(suite is 2 s warm — remaining work is CI cache + the flaky start test)*
 
 ## MVP-1 — A credible exam (evaluate what examiners evaluate)
 

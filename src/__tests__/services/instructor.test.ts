@@ -1,6 +1,15 @@
 import { buildImmediateInstruction, buildUpcomingInstruction } from '../../services/instructor';
 import type { RouteStep } from '../../types';
 
+// instructor → tts → aiTransport → supabase: mock the native-dependent tail
+jest.mock('../../services/supabase', () => ({
+  supabase: {
+    auth: {
+      getSession: async () => ({ data: { session: { access_token: 'test-token' } } }),
+    },
+  },
+}));
+
 function step(instruction: string, maneuver?: string): RouteStep {
   return {
     instruction,

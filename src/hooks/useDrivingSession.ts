@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import * as Location from 'expo-location';
 import { Coordinate, RouteStep, SessionPhase, DrivingSession, GPSPoint } from '../types';
 import {
-  getRoute, rerouteFromPosition, getDestinationAhead, DirectionsResult, distanceBetween,
+  getRoute, rerouteFromPosition, getDestinationAhead, DirectionsResult, distanceBetween, distanceToPolyline,
 } from '../services/googleDirections';
 import { speak, stopSpeaking, buildImmediateInstruction, buildUpcomingInstruction } from '../services/instructor';
 import { destroyVoice } from '../services/voiceRecognition';
@@ -157,9 +157,11 @@ export function useDrivingSession(userId: string) {
 
     const nextStep = steps[0];
     const distToEnd = distanceBetween(coord, nextStep.endLocation);
-    const distToStart = distanceBetween(coord, nextStep.startLocation);
     const stepCompleted = distToEnd <= STEP_COMPLETION_RADIUS;
-    const offRoute = distToEnd > OFF_ROUTE_THRESHOLD && distToStart > OFF_ROUTE_THRESHOLD;
+    // Off-route = far from the step's actual geometry, not from its endpoints —
+    // endpoint distance false-positives on any step longer than 2× the threshold.
+    const stepPath = nextStep.polyline ?? [nextStep.startLocation, nextStep.endLocation];
+    const offRoute = distanceToPolyline(coord, stepPath) > OFF_ROUTE_THRESHOLD;
 
     const monitorResult = processMonitoringUpdate(coord, speedKmh, steps, distToEnd, stepCompleted);
 

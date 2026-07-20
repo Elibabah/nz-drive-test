@@ -10,6 +10,8 @@ export interface RouteStep {
   startLocation: Coordinate;
   endLocation: Coordinate;
   maneuver?: string;
+  /** Decoded step geometry; falls back to [startLocation, endLocation] when absent */
+  polyline?: Coordinate[];
 }
 
 export interface GPSPoint {
