@@ -58,6 +58,15 @@ export default {
             'Allow NZ Drive Practice to access your microphone for hazard detection.',
         },
       ],
+      [
+        'expo-speech-recognition',
+        {
+          microphonePermission:
+            'We need the microphone to listen for your responses to the examiner.',
+          speechRecognitionPermission:
+            'We use speech recognition to understand your responses to the examiner.',
+        },
+      ],
     ],
     experiments: {
       typedRoutes: true,

@@ -32,7 +32,7 @@ bash simulate_drive.sh
 
 ### Native build requirement
 
-`@react-native-community/voice` is a native module — the app cannot run in Expo Go. Always use `npx expo run:ios` (development build). The `ios/` folder is committed and managed via CocoaPods.
+`expo-speech-recognition` is a native module — the app cannot run in Expo Go. Always use `npx expo run:ios` (development build). The `ios/` folder is committed and managed via CocoaPods.
 
 ### API key injection
 
@@ -60,7 +60,7 @@ Speed, stop-sign/railway/pedestrian-crossing compliance, harsh braking, unexpect
 
 ### Voice (`src/services/voiceRecognition.ts`, `src/hooks/useVoiceConversation.ts`)
 
-Wraps `@react-native-community/voice`. Current mode is **one-shot**: the mic opens after examiner questions (8 s window) or via tap-to-speak on the examiner bar. A continuous-listening API exists in `voiceRecognition.ts` but is not wired up (hands-free strategy pending ADR-0003 spike). TTS is OpenAI TTS (`tts.ts`, voice "onyx") with expo-speech en-NZ fallback; `speakNavigation` interrupts conversation TTS via the `onTTSInterrupt` listener system.
+Wraps `expo-speech-recognition` (replaced the abandoned `@react-native-community/voice`, which crashed with an AVAudioPCMBuffer exception whenever the mic opened after TTS playback — see ADR-0003). Current mode is **one-shot**: the mic opens after examiner questions (8 s window) or via tap-to-speak on the examiner bar. A continuous-listening API exists in `voiceRecognition.ts` but is not wired up (hands-free strategy pending ADR-0003 spike). TTS is OpenAI TTS (`tts.ts`, voice "onyx") with expo-speech en-NZ fallback; `speakNavigation` interrupts conversation TTS via the `onTTSInterrupt` listener system.
 
 ### AI examiner (`src/services/aiInstructor.ts`)
 
