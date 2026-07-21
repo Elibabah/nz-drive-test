@@ -79,60 +79,11 @@ export async function getCurrentUserId(): Promise<string | null> {
 // --- Sessions ---
 
 export async function saveSession(session: DrivingSession): Promise<void> {
-  const { routeCoordinates, hazardEvents, ...sessionMeta } = session;
-
-  const { error: sessionError } = await supabase.from('sessions').upsert({
-    id: session.id,
-    user_id: session.userId,
-    start_time: new Date(session.startTime).toISOString(),
-    end_time: session.endTime ? new Date(session.endTime).toISOString() : null,
-    duration_seconds: Math.round(session.duration),
-    total_distance_meters: Math.round(session.totalDistance),
-    average_speed_kmh: Math.round(session.averageSpeed),
-    status: session.status,
-    score: session.score ?? null,
-    feedback: session.feedback ?? null,
-  });
-
-  if (sessionError) {
-    console.warn('Session save error:', sessionError.message);
+  const { checkpointSession } = await import('./sessionPersistence');
+  const result = await checkpointSession(session);
+  if (!result.ok) {
+    if (result.errors.length > 0) console.warn('Session save errors:', result.errors.join('; '));
     await cacheSessionLocally(session);
-    return;
-  }
-
-  // Save GPS track in chunks
-  if (routeCoordinates.length > 0) {
-    const trackRows = routeCoordinates.map((p, i) => ({
-      session_id: session.id,
-      sequence: i,
-      latitude: p.coordinate.latitude,
-      longitude: p.coordinate.longitude,
-      speed_ms: p.speed,
-      heading: p.heading,
-      recorded_at: new Date(p.timestamp).toISOString(),
-    }));
-
-    // Insert in chunks of 500
-    for (let i = 0; i < trackRows.length; i += 500) {
-      const { error: trackError } = await supabase.from('gps_tracks').insert(trackRows.slice(i, i + 500));
-      if (trackError) console.warn('GPS track insert error:', trackError.message);
-    }
-  }
-
-  // Save hazard events
-  if (hazardEvents.length > 0) {
-    const hazardRows = hazardEvents.map((h) => ({
-      id: h.id,
-      session_id: h.sessionId,
-      occurred_at: new Date(h.timestamp).toISOString(),
-      latitude: h.location.latitude,
-      longitude: h.location.longitude,
-      prompt: h.prompt,
-      response: h.response,
-      detected_correctly: h.detectedCorrectly,
-    }));
-
-    await supabase.from('hazard_events').insert(hazardRows);
   }
 }
 

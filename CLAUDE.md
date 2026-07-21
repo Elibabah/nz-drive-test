@@ -68,7 +68,7 @@ Conversational examiner "Sam" on Claude Haiku with a rolling 8-exchange history:
 
 ### Backend (`src/services/supabase.ts`)
 
-**Google OAuth via Supabase** (`signInWithGoogle`, expo-auth-session PKCE flow); login is currently required by `app/_layout.tsx`. Sessions, GPS tracks, and hazard events are written to Supabase with RLS at session end (other event types persist only inside the `score` JSONB — schema v2 is ROADMAP MVP-0). Falls back to `AsyncStorage` cache if offline. Schema is in `supabase/schema.sql`.
+**Google OAuth via Supabase** (`signInWithGoogle`, expo-auth-session PKCE flow); login is currently required by `app/_layout.tsx`. **Schema v2**: every event type has its own table with per-operation RLS, and `src/services/sessionPersistence.ts` checkpoints the full session state every 60 s during an active session (idempotent upserts — a crash loses ≤ 1 min). `saveSession` delegates to the same checkpoint; falls back to `AsyncStorage` cache when unauthenticated/offline. Schema is in `supabase/schema.sql` (re-runnable; apply via SQL editor).
 
 ### AI feedback (`src/services/claudeFeedback.ts`)
 

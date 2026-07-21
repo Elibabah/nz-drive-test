@@ -35,6 +35,14 @@ jest.mock('../../services/claudeFeedback', () => ({
   evaluateKnowledgeResponse: jest.fn().mockResolvedValue({ quality: 'correct', feedback: 'OK' }),
 }));
 
+jest.mock('../../services/supabase', () => ({
+  getCurrentUserId: jest.fn().mockResolvedValue('11111111-2222-3333-4444-555555555555'),
+}));
+
+jest.mock('../../services/sessionPersistence', () => ({
+  checkpointSession: jest.fn().mockResolvedValue({ ok: true, errors: [] }),
+}));
+
 function mockRouteResponse() {
   jest.spyOn(global, 'fetch').mockResolvedValueOnce({
     ok: true,

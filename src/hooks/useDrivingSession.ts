@@ -7,13 +7,15 @@ import {
 import { speak, stopSpeaking, buildImmediateInstruction, buildUpcomingInstruction } from '../services/instructor';
 import { destroyVoice } from '../services/voiceRecognition';
 import {
-  createSession, recordGPSPoint,
+  createSession, getActiveSession, recordGPSPoint,
   recordHazardEvent, updateHazardEvaluation,
   recordKnowledgeEvent, updateKnowledgeEvaluation,
   recordNavigationEvent,
   recordSpeedViolation, recordStopEvent, recordBrakingEvent,
   completeSession, abandonSession,
 } from '../services/sessionRecorder';
+import { checkpointSession } from '../services/sessionPersistence';
+import { getCurrentUserId } from '../services/supabase';
 import { processMonitoringUpdate, resetMonitor, clearStepMonitoring } from '../services/eventMonitor';
 import {
   evaluateHazardResponse, evaluateKnowledgeResponse,
@@ -59,6 +61,7 @@ export function useDrivingSession(userId: string) {
   const navStepKeyRef = useRef('');
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const sessionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const checkpointTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const setPhaseWithRef = useCallback((p: SessionPhase) => { phaseRef.current = p; setPhase(p); }, []);
   const setRemainingStepsWithRef = useCallback((steps: RouteStep[]) => { remainingStepsRef.current = steps; setRemainingSteps(steps); }, []);
@@ -246,6 +249,7 @@ export function useDrivingSession(userId: string) {
   const cleanup = useCallback(async () => {
     locationSubscription.current?.remove();
     if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+    if (checkpointTimerRef.current) clearInterval(checkpointTimerRef.current);
     resetMonitor();
     await stopSpeaking();
     await destroyVoice();
@@ -278,7 +282,10 @@ export function useDrivingSession(userId: string) {
       setRoute(routeData);
       setRemainingStepsWithRef([...routeData.steps]);
 
-      setSession(createSession(userId));
+      // Resolve auth at creation time — the userId prop may still hold its
+      // placeholder while auth loads (the v1 'anon'-in-uuid save bug).
+      const resolvedUserId = (await getCurrentUserId().catch(() => null)) ?? userId;
+      setSession(createSession(resolvedUserId));
       setPhaseWithRef('ready');
     } catch (err: any) {
       setError(err?.message ?? 'Failed to start session. Check your internet connection.');
@@ -317,6 +324,13 @@ export function useDrivingSession(userId: string) {
       setTimeRemainingMs(remaining);
       if (remaining <= 0) finishSession();
     }, 1000);
+
+    // Incremental persistence: checkpoint every minute so a crash mid-session
+    // loses at most ~1 min of data (ROADMAP MVP-0). Fire-and-forget.
+    checkpointTimerRef.current = setInterval(() => {
+      const active = getActiveSession();
+      if (active) checkpointSession(active).catch(() => {});
+    }, 60_000);
   }, [setPhaseWithRef, processPosition, finishSession]);
 
   const cancelSession = useCallback(async () => {
