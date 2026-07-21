@@ -32,7 +32,7 @@ bash simulate_drive.sh
 
 ### Native build requirement
 
-`expo-speech-recognition` is a native module — the app cannot run in Expo Go. Always use `npx expo run:ios` (development build). The `ios/` folder is committed and managed via CocoaPods.
+`expo-speech-recognition` is a native module — the app cannot run in Expo Go. Always use `npx expo run:ios` (development build). The `ios/` folder is **gitignored** (regenerated via `expo prebuild`) and managed via CocoaPods locally.
 
 ### API key injection
 
