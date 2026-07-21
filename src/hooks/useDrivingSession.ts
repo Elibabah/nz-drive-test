@@ -1,40 +1,34 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import * as Location from 'expo-location';
-import { Coordinate, RouteStep, SessionPhase, DrivingSession, GPSPoint } from '../types';
+import { Coordinate, RouteStep, SessionPhase, DrivingSession } from '../types';
 import {
-  getRoute, rerouteFromPosition, getDestinationAhead, DirectionsResult, distanceBetween, distanceToPolyline,
+  getRoute, rerouteFromPosition, getDestinationAhead, DirectionsResult,
 } from '../services/googleDirections';
-import { speak, stopSpeaking, buildImmediateInstruction, buildUpcomingInstruction } from '../services/instructor';
+import { speak, stopSpeaking } from '../services/instructor';
 import { destroyVoice } from '../services/voiceRecognition';
-import {
-  createSession, getActiveSession, recordGPSPoint,
-  recordHazardEvent, updateHazardEvaluation,
-  recordKnowledgeEvent, updateKnowledgeEvaluation,
-  recordNavigationEvent,
-  recordSpeedViolation, recordStopEvent, recordBrakingEvent,
-  completeSession, abandonSession,
-} from '../services/sessionRecorder';
 import { checkpointSession } from '../services/sessionPersistence';
 import { getCurrentUserId } from '../services/supabase';
-import { processMonitoringUpdate, resetMonitor, clearStepMonitoring } from '../services/eventMonitor';
 import { isTTSPlaying } from '../services/audioState';
 import {
   evaluateHazardResponse, evaluateKnowledgeResponse,
 } from '../services/claudeFeedback';
 import { NavigationContext } from '../services/aiInstructor';
+import { SessionEngine, EngineCommand, RerouteReason } from '../engine/sessionEngine';
 import { NZ_DRIVING } from '../constants/nzDriving';
 import { GOOGLE_MAPS_API_KEY } from '../constants/config';
 
 const LOCATION_UPDATE_INTERVAL = 2000;
-const STEP_COMPLETION_RADIUS = 30;
-const OFF_ROUTE_THRESHOLD = 300;
-const REROUTE_DEBOUNCE_MS = 20_000;
 
 function randomBearing(): number {
   const b = [0, 45, 90, 135, 180, 225, 270, 315];
   return b[Math.floor(Math.random() * b.length)];
 }
 
+/**
+ * Thin adapter around the pure SessionEngine (ADR-0006): owns device APIs
+ * (GPS, TTS, network, persistence) and React state; every exam decision lives
+ * in the engine.
+ */
 export function useDrivingSession(userId: string) {
   const [phase, setPhase] = useState<SessionPhase>('idle');
   const [currentPosition, setCurrentPosition] = useState<Coordinate | null>(null);
@@ -45,204 +39,93 @@ export function useDrivingSession(userId: string) {
   const [isRerouting, setIsRerouting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const engineRef = useRef<SessionEngine | null>(null);
   const phaseRef = useRef<SessionPhase>('idle');
-  const remainingStepsRef = useRef<RouteStep[]>([]);
-  const timeRemainingMsRef = useRef(NZ_DRIVING.SESSION_DURATION_MS);
   const sessionDestinationRef = useRef<Coordinate | null>(null);
-  const lastInstructionRef = useRef('');
-  const sessionStartTimeRef = useRef(0);
-  const isReroutingRef = useRef(false);
-  const lastRerouteTimeRef = useRef(0);
   const currentPositionRef = useRef<Coordinate | null>(null);
-  const currentSpeedRef = useRef(0);
-  // Navigation instruction dedup
-  const lastNavInstrRef = useRef('');
-  const navImmediateFiredRef = useRef(false);
-  const navUpcomingFiredRef = useRef(false);
-  const navStepKeyRef = useRef('');
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const sessionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const checkpointTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const setPhaseWithRef = useCallback((p: SessionPhase) => { phaseRef.current = p; setPhase(p); }, []);
-  const setRemainingStepsWithRef = useCallback((steps: RouteStep[]) => { remainingStepsRef.current = steps; setRemainingSteps(steps); }, []);
 
   // ─── Navigation context (read by useVoiceConversation) ────────────────────────
 
   const getNavigationContext = useCallback((): NavigationContext => {
-    const pos = currentPositionRef.current ?? { latitude: 0, longitude: 0 };
-    const steps = remainingStepsRef.current;
-    const nextStep = steps[0] ?? null;
-    return {
-      position: pos,
-      nextStep,
-      distanceToTurnM: nextStep ? distanceBetween(pos, nextStep.endLocation) : 9999,
-      remainingSteps: steps,
-      timeRemainingMs: timeRemainingMsRef.current,
-      sessionElapsedMs: sessionStartTimeRef.current ? Date.now() - sessionStartTimeRef.current : 0,
-      speedKmh: currentSpeedRef.current,
-    };
+    const engine = engineRef.current;
+    if (!engine) {
+      return {
+        position: currentPositionRef.current ?? { latitude: 0, longitude: 0 },
+        nextStep: null, distanceToTurnM: 9999, remainingSteps: [],
+        timeRemainingMs: NZ_DRIVING.SESSION_DURATION_MS, sessionElapsedMs: 0, speedKmh: 0,
+      };
+    }
+    return engine.getNavigationContext(Date.now());
   }, []);
 
   // ─── Recording callbacks (called from useVoiceConversation) ──────────────────
 
   const recordHazardExchange = useCallback((prompt: string, response: string) => {
-    const pos = currentPositionRef.current;
-    if (!pos) return;
-    const event = recordHazardEvent(pos, prompt, response);
+    const engine = engineRef.current;
+    const eventId = engine?.recordHazardExchange(prompt, response, Date.now());
+    if (!engine || !eventId) return;
     evaluateHazardResponse(prompt, response)
-      .then(({ quality, feedback }) => updateHazardEvaluation(event.id, quality, feedback))
+      .then(({ quality, feedback }) => engine.applyHazardEvaluation(eventId, quality, feedback))
       .catch(() => {});
   }, []);
 
   const recordKnowledgeExchange = useCallback((question: string, expectedAnswer: string, response: string) => {
-    const pos = currentPositionRef.current;
-    if (!pos) return;
-    const event = recordKnowledgeEvent(pos, question, expectedAnswer, response);
+    const engine = engineRef.current;
+    const eventId = engine?.recordKnowledgeExchange(question, expectedAnswer, response, Date.now());
+    if (!engine || !eventId) return;
     evaluateKnowledgeResponse(question, expectedAnswer, response)
-      .then(({ quality, feedback }) => updateKnowledgeEvaluation(event.id, quality, feedback))
+      .then(({ quality, feedback }) => engine.applyKnowledgeEvaluation(eventId, quality, feedback))
       .catch(() => {});
   }, []);
 
-  // ─── Re-routing ─────────────────────────────────────────────────────────────
+  // ─── Command execution (the adapter side of the engine contract) ─────────────
 
-  const triggerReroute = useCallback(async (coord: Coordinate, reason: 'step_complete' | 'off_route' | 'destination_reached') => {
-    if (!sessionDestinationRef.current) return;
-    clearStepMonitoring();
+  const performReroute = useCallback(async (_reason: RerouteReason) => {
+    const engine = engineRef.current;
+    const origin = currentPositionRef.current;
+    const destination = sessionDestinationRef.current;
+    if (!engine || !origin || !destination) { engine?.rerouteFailed(); return; }
 
-    if (reason === 'off_route' && lastInstructionRef.current) {
-      const instrWas = lastInstructionRef.current;
-      recordNavigationEvent(coord, instrWas, instrWas.toLowerCase().includes('turn') ? 'wrong_turn' : 'off_route');
-      const msg = instrWas.toLowerCase().includes('turn left')
-        ? 'I asked you to turn left. I will give you new directions from here.'
-        : instrWas.toLowerCase().includes('turn right')
-        ? 'I asked you to turn right. I will give you new directions from here.'
-        : 'You have gone off route. I will give you new directions from here.';
-      speak(msg);
-    }
-
-    isReroutingRef.current = true;
-    lastRerouteTimeRef.current = Date.now();
     setIsRerouting(true);
-
     try {
-      const newRoute = await rerouteFromPosition(coord, sessionDestinationRef.current, GOOGLE_MAPS_API_KEY);
-      setRemainingStepsWithRef(newRoute.steps);
+      const newRoute = await rerouteFromPosition(origin, destination, GOOGLE_MAPS_API_KEY);
+      engine.applyReroute(newRoute.steps);
       setRoute(newRoute);
-      lastInstructionRef.current = '';
-      // Force nav dedup reset so new steps always get their instructions
-      navStepKeyRef.current = '';
-      navImmediateFiredRef.current = false;
-      navUpcomingFiredRef.current = false;
-    } catch { /* keep existing steps */ } finally {
-      isReroutingRef.current = false;
+      setRemainingSteps(newRoute.steps);
+    } catch {
+      engine.rerouteFailed();
+    } finally {
       setIsRerouting(false);
     }
-  }, [setRemainingStepsWithRef]);
+  }, []);
 
-  // ─── Core position processing ────────────────────────────────────────────────
+  const executeCommands = useCallback((commands: EngineCommand[]) => {
+    for (const cmd of commands) {
+      if (cmd.type === 'speak') {
+        // Engine contract: coaching never talks over ongoing speech;
+        // safety/navigation interrupt (speak = speakNavigation).
+        if (cmd.priority === 'coaching' && isTTSPlaying()) continue;
+        speak(cmd.text);
+      } else if (cmd.type === 'requestReroute') {
+        performReroute(cmd.reason);
+      }
+    }
+  }, [performReroute]);
+
+  // ─── Position processing ──────────────────────────────────────────────────────
 
   const processPosition = useCallback((coord: Coordinate, speedKmh: number) => {
     setCurrentPosition(coord);
     currentPositionRef.current = coord;
-    currentSpeedRef.current = speedKmh;
-
-    if (phaseRef.current !== 'active') return;
-
-    const steps = remainingStepsRef.current;
-    const canRerouteNow =
-      !isReroutingRef.current &&
-      Date.now() - lastRerouteTimeRef.current > REROUTE_DEBOUNCE_MS;
-
-    if (steps.length === 0) {
-      if (canRerouteNow) triggerReroute(coord, 'destination_reached');
-      return;
-    }
-
-    const nextStep = steps[0];
-    const distToEnd = distanceBetween(coord, nextStep.endLocation);
-    const stepCompleted = distToEnd <= STEP_COMPLETION_RADIUS;
-    // Off-route = far from the step's actual geometry, not from its endpoints —
-    // endpoint distance false-positives on any step longer than 2× the threshold.
-    const stepPath = nextStep.polyline ?? [nextStep.startLocation, nextStep.endLocation];
-    const offRoute = distanceToPolyline(coord, stepPath) > OFF_ROUTE_THRESHOLD;
-
-    const monitorResult = processMonitoringUpdate(coord, speedKmh, steps, distToEnd, stepCompleted);
-
-    if (monitorResult.speedWarning) {
-      const { text, severity, speedKmh: spd, limitKmh, duration } = monitorResult.speedWarning;
-      speak(text);
-      recordSpeedViolation(coord, spd, limitKmh, severity, duration);
-    }
-
-    if (monitorResult.stopViolation) {
-      const { complied, lowestSpeedKmh, type } = monitorResult.stopViolation;
-      if (type) {
-        recordStopEvent(coord, type as 'stop_sign' | 'railway_crossing' | 'pedestrian_crossing', complied, lowestSpeedKmh);
-        if (!complied) {
-          const msg =
-            type === 'stop_sign' ? 'At the stop sign, you must come to a complete stop before proceeding.'
-            : type === 'railway_crossing' ? 'At a railway crossing, you must slow right down and check both directions.'
-            : 'You must give way to pedestrians at a pedestrian crossing.';
-          speak(msg);
-        }
-      }
-    }
-
-    // Coaching nudges (braking, unexpected stop) are low priority: always
-    // recorded, but never interrupt the examiner mid-sentence — speak() here is
-    // speakNavigation, which cuts off any conversation TTS in progress.
-    if (monitorResult.brakingEvent) {
-      const { text, deltaKmh, prevSpeedKmh } = monitorResult.brakingEvent;
-      recordBrakingEvent(coord, prevSpeedKmh, speedKmh, deltaKmh);
-      if (!isTTSPlaying()) speak(text);
-    }
-
-    if (monitorResult.unexpectedStopWarning && !isTTSPlaying()) {
-      speak(monitorResult.unexpectedStopWarning.text);
-    }
-
-    if (stepCompleted && canRerouteNow) {
-      triggerReroute(coord, 'step_complete');
-      // Reset nav dedup for next step
-      navImmediateFiredRef.current = false;
-      navUpcomingFiredRef.current = false;
-      navStepKeyRef.current = '';
-      return;
-    }
-    if (offRoute && canRerouteNow) { triggerReroute(coord, 'off_route'); return; }
-
-    // ─── Scripted navigation instructions ────────────────────────────────────
-    const distToTurn = distToEnd;
-    const stepKey = `${nextStep.endLocation.latitude.toFixed(5)},${nextStep.endLocation.longitude.toFixed(5)}`;
-
-    if (stepKey !== navStepKeyRef.current) {
-      navStepKeyRef.current = stepKey;
-      navImmediateFiredRef.current = false;
-      navUpcomingFiredRef.current = false;
-      lastInstructionRef.current = '';
-    }
-
-    if (!navUpcomingFiredRef.current) {
-      const upcoming = buildUpcomingInstruction(nextStep, distToTurn);
-      if (upcoming && upcoming !== lastNavInstrRef.current) {
-        navUpcomingFiredRef.current = true;
-        lastNavInstrRef.current = upcoming;
-        lastInstructionRef.current = upcoming;
-        speak(upcoming);
-      }
-    }
-
-    if (!navImmediateFiredRef.current) {
-      const immediate = buildImmediateInstruction(nextStep, distToTurn);
-      if (immediate && immediate !== lastNavInstrRef.current) {
-        navImmediateFiredRef.current = true;
-        lastNavInstrRef.current = immediate;
-        lastInstructionRef.current = immediate;
-        speak(immediate);
-      }
-    }
-  }, [triggerReroute]);
+    const engine = engineRef.current;
+    if (!engine || phaseRef.current !== 'active') return;
+    executeCommands(engine.handlePosition(coord, speedKmh, Date.now()));
+  }, [executeCommands]);
 
   const updatePositionFromMap = useCallback((coord: Coordinate, speedKmh = 0) => {
     processPosition(coord, speedKmh);
@@ -254,7 +137,6 @@ export function useDrivingSession(userId: string) {
     locationSubscription.current?.remove();
     if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
     if (checkpointTimerRef.current) clearInterval(checkpointTimerRef.current);
-    resetMonitor();
     await stopSpeaking();
     await destroyVoice();
   }, []);
@@ -284,32 +166,35 @@ export function useDrivingSession(userId: string) {
 
       const routeData = await getRoute(coords, destination, GOOGLE_MAPS_API_KEY);
       setRoute(routeData);
-      setRemainingStepsWithRef([...routeData.steps]);
+      setRemainingSteps(routeData.steps);
 
       // Resolve auth at creation time — the userId prop may still hold its
       // placeholder while auth loads (the v1 'anon'-in-uuid save bug).
       const resolvedUserId = (await getCurrentUserId().catch(() => null)) ?? userId;
-      setSession(createSession(resolvedUserId));
+      const engine = new SessionEngine({ userId: resolvedUserId, nowMs: Date.now() });
+      engine.setRoute(routeData.steps);
+      engineRef.current = engine;
+      setSession(engine.session);
       setPhaseWithRef('ready');
     } catch (err: any) {
       setError(err?.message ?? 'Failed to start session. Check your internet connection.');
       setPhaseWithRef('idle');
     }
-  }, [userId, setPhaseWithRef, setRemainingStepsWithRef]);
+  }, [userId, setPhaseWithRef]);
 
   const finishSession = useCallback(async () => {
     setPhaseWithRef('completing');
     await cleanup();
-    const completed = completeSession();
-    setSession(completed);
+    const engine = engineRef.current;
+    if (engine) setSession(engine.complete(Date.now()));
     setPhaseWithRef('completed');
   }, [cleanup, setPhaseWithRef]);
 
   const beginDriving = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
     setPhaseWithRef('active');
-    sessionStartTimeRef.current = Date.now();
-    lastRerouteTimeRef.current = Date.now();
-    resetMonitor();
+    engine.start(Date.now());
 
     locationSubscription.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.BestForNavigation, timeInterval: LOCATION_UPDATE_INTERVAL, distanceInterval: 0 },
@@ -317,14 +202,17 @@ export function useDrivingSession(userId: string) {
         const coord: Coordinate = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         const speedKmh = Math.max(0, (loc.coords.speed ?? 0) * 3.6);
         processPosition(coord, speedKmh);
-        recordGPSPoint({ coordinate: coord, timestamp: loc.timestamp, speed: Math.max(0, loc.coords.speed ?? 0), heading: loc.coords.heading ?? 0 });
+        engineRef.current?.recordGpsPoint({
+          coordinate: coord,
+          timestamp: loc.timestamp,
+          speed: Math.max(0, loc.coords.speed ?? 0),
+          heading: loc.coords.heading ?? 0,
+        });
       }
     );
 
     sessionTimerRef.current = setInterval(() => {
-      const elapsed = Date.now() - sessionStartTimeRef.current;
-      const remaining = Math.max(0, NZ_DRIVING.SESSION_DURATION_MS - elapsed);
-      timeRemainingMsRef.current = remaining;
+      const remaining = engineRef.current?.timeRemainingMs(Date.now()) ?? 0;
       setTimeRemainingMs(remaining);
       if (remaining <= 0) finishSession();
     }, 1000);
@@ -332,22 +220,22 @@ export function useDrivingSession(userId: string) {
     // Incremental persistence: checkpoint every minute so a crash mid-session
     // loses at most ~1 min of data (ROADMAP MVP-0). Fire-and-forget.
     checkpointTimerRef.current = setInterval(() => {
-      const active = getActiveSession();
+      const active = engineRef.current?.session;
       if (active) checkpointSession(active).catch(() => {});
     }, 60_000);
   }, [setPhaseWithRef, processPosition, finishSession]);
 
   const cancelSession = useCallback(async () => {
     await cleanup();
-    abandonSession();
+    engineRef.current?.abandon();
+    engineRef.current = null;
     setSession(null);
     setPhaseWithRef('idle');
     setRoute(null);
-    setRemainingStepsWithRef([]);
-    timeRemainingMsRef.current = NZ_DRIVING.SESSION_DURATION_MS;
+    setRemainingSteps([]);
     setTimeRemainingMs(NZ_DRIVING.SESSION_DURATION_MS);
     sessionDestinationRef.current = null;
-  }, [cleanup, setPhaseWithRef, setRemainingStepsWithRef]);
+  }, [cleanup, setPhaseWithRef]);
 
   useEffect(() => { return () => { cleanup(); }; }, [cleanup]);
 

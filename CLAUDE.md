@@ -38,11 +38,13 @@ bash simulate_drive.sh
 
 `app.config.js` (not `app.json`) reads `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` from `.env` and injects it into `ios/NZDrivePractice/AppDelegate.swift` via `expo prebuild`. If the map tiles are blank, the prebuild hasn't run with the correct key — run the prebuild command above, then rebuild.
 
-### Session state machine (`src/hooks/useDrivingSession.ts`)
+### Exam engine (`src/engine/`) + session adapter (`src/hooks/useDrivingSession.ts`)
 
-The entire session lifecycle lives here. Phases: `idle → requesting-location → building-route → ready → active ↔ hazard-prompt ↔ listening → completing → completed`.
+**All exam logic lives in the pure engine** (ADR-0006): `sessionEngine.ts` (state + command emission), `monitoring.ts` (speed/stops/braking), `navigation.ts` (instruction builders + dedup), `recording.ts` (event log), `scoring.ts`, `geo.ts`. No React/Expo/globals/clocks — timestamps are injected, so sessions replay deterministically (`engine/__tests__/replay.test.ts` drives a full synthetic session).
 
-**Critical pattern**: Navigation callbacks use `useRef` mirrors of state (`phaseRef`, `remainingStepsRef`, `timeRemainingMsRef`) to avoid stale closures inside `processPosition`. Any callback that runs asynchronously during a session must read from refs, not state.
+The engine emits commands; the adapter executes them: `speak` with priority (`safety`/`navigation` interrupt, `coaching` is dropped if TTS is playing) and `requestReroute` (adapter fetches, then `applyReroute`/`rerouteFailed`).
+
+`useDrivingSession` is the thin adapter: device APIs (GPS, TTS, network, checkpoints) + React state. Phases: `idle → requesting-location → building-route → ready → active → completing → completed`.
 
 **Position updates**: `onUserLocationChange` on the MapView is the authoritative source of position during a session — `watchPositionAsync` is a fallback. `MapView.animateCamera` is called from this event; `followsUserLocation` prop is intentionally not used (unreliable with `PROVIDER_GOOGLE`).
 
@@ -54,9 +56,9 @@ The app pre-fetches a full route (origin → random destination) at session star
 
 **Rerouting is implemented** (`triggerReroute` in `useDrivingSession.ts`): fires on step completion, off-route detection (> 300 m from both the current step's start and end — known false-positive on steps > 600 m; fix tracked in ROADMAP MVP-0), or destination reached, with a 20 s debounce.
 
-### Event monitoring (`src/services/eventMonitor.ts`)
+### Event monitoring (`src/engine/monitoring.ts`)
 
-Speed, stop-sign/railway/pedestrian-crossing compliance, harsh braking, unexpected stops. **Known limitation**: speed limit is hardcoded 50 km/h and stop/crossing detection parses Google instruction text that never contains those phrases — real road data via OSM is ROADMAP MVP-1 (ADR-0004).
+Speed, stop-sign/railway/pedestrian-crossing compliance, harsh braking, unexpected stops (armed only after first real movement). **Known limitation**: speed limit is hardcoded 50 km/h and stop/crossing detection parses Google instruction text that never contains those phrases — real road data via OSM is ROADMAP MVP-1 (ADR-0004).
 
 ### Voice (`src/services/voiceRecognition.ts`, `src/hooks/useVoiceConversation.ts`)
 

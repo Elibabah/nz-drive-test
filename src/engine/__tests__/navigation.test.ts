@@ -1,14 +1,5 @@
-import { buildImmediateInstruction, buildUpcomingInstruction } from '../../services/instructor';
+import { buildImmediateInstruction, buildUpcomingInstruction } from '../navigation';
 import type { RouteStep } from '../../types';
-
-// instructor → tts → aiTransport → supabase: mock the native-dependent tail
-jest.mock('../../services/supabase', () => ({
-  supabase: {
-    auth: {
-      getSession: async () => ({ data: { session: { access_token: 'test-token' } } }),
-    },
-  },
-}));
 
 function step(instruction: string, maneuver?: string): RouteStep {
   return {
@@ -185,5 +176,44 @@ describe('buildUpcomingInstruction', () => {
     it('straight-on → null', () => {
       expect(buildUpcomingInstruction(step('Continue on Dominion Road'), 200)).toBeNull();
     });
+  });
+});
+
+// ─── NavigationAnnouncer dedup ────────────────────────────────────────────────
+
+import { NavigationAnnouncer } from '../navigation';
+
+describe('NavigationAnnouncer', () => {
+  const turnLeft = step('Turn left onto Queen Street', 'turn-left');
+
+  it('fires upcoming then immediate exactly once each for a step', () => {
+    const a = new NavigationAnnouncer();
+    expect(a.update(turnLeft, 250)).toHaveLength(1); // upcoming
+    expect(a.update(turnLeft, 240)).toHaveLength(0); // deduped
+    expect(a.update(turnLeft, 60)).toHaveLength(1);  // immediate
+    expect(a.update(turnLeft, 50)).toHaveLength(0);  // deduped
+  });
+
+  it('remembers the last instruction given for off-route phrasing', () => {
+    const a = new NavigationAnnouncer();
+    a.update(turnLeft, 60);
+    expect(a.lastInstructionGiven).toBe('Turn left here.');
+  });
+
+  it('resetForNewRoute clears state so a new route announces fresh', () => {
+    const a = new NavigationAnnouncer();
+    a.update(turnLeft, 60);
+    a.resetForNewRoute();
+    const turnRight = step('Turn right onto Spey Street', 'turn-right');
+    expect(a.update(turnRight, 60)).toEqual(['Turn right here. Give way to oncoming traffic.']);
+  });
+
+  it('re-announces when the step changes (different end location)', () => {
+    const a = new NavigationAnnouncer();
+    a.update(turnLeft, 60);
+    const other: RouteStep = { ...turnLeft, endLocation: { latitude: -36.9, longitude: 174.8 } };
+    // Different text (turn-right) so the cross-step repeat guard doesn't apply
+    const otherRight = { ...other, instruction: 'Turn right onto K Road', maneuver: 'turn-right' };
+    expect(a.update(otherRight, 60)).toHaveLength(1);
   });
 });
