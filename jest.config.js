@@ -2,6 +2,12 @@
 module.exports = {
   preset: 'jest-expo',
   testEnvironment: 'node',
+  // Stable cache path so CI can persist it — cold transforms are what made
+  // the suite take ~10 min; warm it runs in ~2 s.
+  cacheDirectory: '<rootDir>/.jest-cache',
+  // Cold-transform runs can push the first heavy test past jest's 5 s default
+  // (the one observed flake of the startSession test). 15 s is still a hang guard.
+  testTimeout: 15000,
   transformIgnorePatterns: [
     'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?(/.*)?|@expo-google-fonts(/.*)?|expo-modules-core|@unimodules(/.*)?|react-navigation|@react-navigation(/.*)?|@supabase(/.*)?)/)',
   ],
