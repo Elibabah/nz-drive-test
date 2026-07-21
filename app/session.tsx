@@ -10,6 +10,8 @@ import { useVoiceConversation } from '../src/hooks/useVoiceConversation';
 import { SessionTimer } from '../src/components/SessionTimer';
 import { getCurrentUserId, saveSession, updateSessionFeedback } from '../src/services/supabase';
 import { generateSessionFeedback } from '../src/services/claudeFeedback';
+// Light map for now (daytime testing) — DARK_MAP_STYLE in constants/mapStyle
+// is ready for the automatic day/night switch (ROADMAP backlog, MVP-2).
 
 export default function SessionScreen() {
   const router = useRouter();
@@ -167,12 +169,12 @@ export default function SessionScreen() {
               latitudeDelta: 0.012,
               longitudeDelta: 0.012,
             }}
-            userInterfaceStyle="dark"
+            userInterfaceStyle="light"
             showsUserLocation
             scrollEnabled={false}
             zoomEnabled={false}
           >
-            {route && <Polyline coordinates={route.polylineCoordinates} strokeColor="#4ade80" strokeWidth={3} />}
+            {route && <Polyline coordinates={route.polylineCoordinates} strokeColor="#16a34a" strokeWidth={4} />}
           </MapView>
         )}
         <View style={styles.readyOverlay}>
@@ -210,7 +212,7 @@ export default function SessionScreen() {
             latitudeDelta: 0.008,
             longitudeDelta: 0.008,
           }}
-          userInterfaceStyle="dark"
+          userInterfaceStyle="light"
           showsUserLocation
           showsMyLocationButton={false}
           onUserLocationChange={handleUserLocationChange}
@@ -339,7 +341,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 10,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', maxWidth: '90%',
   },
-  nextStepText: { color: '#fff', fontSize: 15, fontWeight: '600', textAlign: 'center' },
+  nextStepText: { color: '#fff', fontSize: 17, fontWeight: '700', textAlign: 'center' },
 
   bottomContainer: { position: 'absolute', bottom: 0, left: 0, right: 0 },
 
@@ -363,7 +365,7 @@ const styles = StyleSheet.create({
   micDotListening: { backgroundColor: '#f87171' },
   micDotSpeaking: { backgroundColor: '#4ade80' },
   examinerContent: { flex: 1 },
-  examinerText: { color: '#fff', fontSize: 15, lineHeight: 21, fontWeight: '500' },
+  examinerText: { color: '#fff', fontSize: 17, lineHeight: 23, fontWeight: '600' },
   examinerHint: { color: 'rgba(255,255,255,0.3)', fontSize: 14 },
   listeningLabel: { color: '#f87171', fontSize: 12, marginTop: 4, fontWeight: '600' },
 
@@ -377,6 +379,6 @@ const styles = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusDotActive: { backgroundColor: '#4ade80' },
   statusText: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
-  endButton: { backgroundColor: '#dc2626', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 9 },
-  endButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  endButton: { backgroundColor: '#dc2626', borderRadius: 12, paddingHorizontal: 22, paddingVertical: 12 },
+  endButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

@@ -96,7 +96,8 @@ Found during MVP-0 field testing (July 2026). Each item is self-contained; none 
 
 | Item | Detail | Suggested slot |
 |---|---|---|
-| UI pass | Map renders light despite `userInterfaceStyle="dark"` → white-on-white HUD on session screen; feedback screen shows raw markdown (`##`, `**`) from the AI debrief; general contrast/truncation audit of all screens | Before MVP-2 (audio-first UI redesigns this screen anyway) |
+| UI pass | Feedback screen shows raw markdown (`##`, `**`) from the AI debrief; general contrast/truncation audit of all screens | Before MVP-2 (audio-first UI redesigns this screen anyway) |
+| Map theme: auto day/night | Session map is hardcoded dark (fixed 2026-07-21, see ADR discussion in commit history). Dark is correct for night driving (glare, night vision) but not universally best — bright daylight glare can wash out a dark theme, and the OS system theme is the wrong proxy (reflects general preference, not ambient daylight). Switch to automatic light/dark by local sunrise/sunset (simple lat/lng calc, no extra API), with manual override as a lower-priority nice-to-have | MVP-2 (alongside the audio-first UI work) |
 | Quiet TTS at session start | `allowsRecordingIOS: true` at launch puts iOS in play-and-record → first utterances route to the earpiece. Enable record mode only around open-mic windows | With ADR-0003 spike |
 | TTS fallback telemetry | Proxy TTS failures silently fall back to the robotic on-device voice (observed once in field). Log occurrences (client event or `ai_usage` status) to measure frequency | MVP-4 (telemetry) |
 | npm audit | 26 vulnerabilities reported (2 critical) at last install — triage which are real for a client app | MVP-4 |

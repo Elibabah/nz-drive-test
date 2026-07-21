@@ -35,9 +35,17 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     gap: 6,
+    // Opaque background so the timer stays readable regardless of the map
+    // tiles underneath (belt-and-braces alongside the dark map style).
+    backgroundColor: 'rgba(10,15,30,0.92)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
   timer: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '700',
     color: '#ffffff',
     fontVariant: ['tabular-nums'],
