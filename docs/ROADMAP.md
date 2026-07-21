@@ -29,7 +29,7 @@ No new user-facing features. The app does what it does today, but safely and rel
 
 **Exit criteria**
 - [x] No provider API key extractable from the app bundle. *(2026-07-20: ai-proxy live, verified on device — 17 proxied calls in `ai_usage`)*
-- [ ] Killing the app mid-session and reopening shows the partial session in history.
+- [x] Killing the app mid-session and reopening shows the partial session in history. *(2026-07-21: verified on device — 60 s checkpoint upserts; schema v2 applied to production)*
 - [x] A 1 km straight step does not trigger a reroute when driven normally. *(2026-07-20: off-route now measured against step polyline; unit-tested)*
 - [x] CI green; suite < 60 s. *(2026-07-21: GitHub Actions green — typecheck + 174 tests in ~4 s with persisted jest cache; react renderer/dom pinned to Expo 54's react 19.1.0 for strict `npm ci`)*
 

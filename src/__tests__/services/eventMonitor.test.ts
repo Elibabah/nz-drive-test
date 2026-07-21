@@ -240,3 +240,39 @@ describe('resetMonitor', () => {
     expect(processMonitoringUpdate(COORD, 61, steps, FAR, false).speedWarning).not.toBeNull();
   });
 });
+
+// ─── Unexpected stop: armed only after first movement ────────────────────────
+
+describe('unexpected stop monitoring', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: 1_700_000_000_000 });
+    resetMonitor();
+  });
+  afterEach(() => jest.useRealTimers());
+
+  const drive = (speedKmh: number) =>
+    processMonitoringUpdate(COORD, speedKmh, [step('Continue on Yarrow Street')], FAR, false);
+
+  it('never warns while stationary before the car has ever moved (session start / desk testing)', () => {
+    for (let i = 0; i < 10; i++) {
+      const result = drive(0);
+      expect(result.unexpectedStopWarning).toBeNull();
+      jest.advanceTimersByTime(2000);
+    }
+  });
+
+  it('warns when stopping mid-carriageway after having driven', () => {
+    drive(30); // arms the monitor
+    drive(0);  // stop begins
+    jest.advanceTimersByTime(5000); // > UNEXPECTED_STOP_DURATION_MS
+    const result = drive(0);
+    expect(result.unexpectedStopWarning).not.toBeNull();
+  });
+
+  it('does not warn for a stop shorter than the threshold', () => {
+    drive(30);
+    drive(0);
+    jest.advanceTimersByTime(2000); // < 4 s
+    expect(drive(0).unexpectedStopWarning).toBeNull();
+  });
+});

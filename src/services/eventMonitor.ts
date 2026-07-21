@@ -71,6 +71,8 @@ let stopState: StopState | null = null;
 let pedestrianState: PedestrianState | null = null;
 let brakingState: BrakingState = { prevSpeedKmh: 0, prevTimestamp: 0, lastWarnedAt: 0 };
 let unexpectedStopState: UnexpectedStopState = { stoppedSince: null, lastWarnedAt: 0 };
+// Sessions start parked — stop monitoring only arms once the car has moved
+let hasMovedSinceStart = false;
 
 export function resetMonitor(): void {
   speedState = { overLimitSince: null, warnedForCurrentIncident: false, lastWarnedSpeedKmh: 0 };
@@ -78,6 +80,7 @@ export function resetMonitor(): void {
   pedestrianState = null;
   brakingState = { prevSpeedKmh: 0, prevTimestamp: 0, lastWarnedAt: 0 };
   unexpectedStopState = { stoppedSince: null, lastWarnedAt: 0 };
+  hasMovedSinceStart = false;
 }
 
 export function clearStepMonitoring(): void {
@@ -193,9 +196,13 @@ export function processMonitoringUpdate(
   brakingState.prevTimestamp = now;
 
   // ── Unexpected stopping ────────────────────────────────────────────────────
+  if (speedKmh >= 10) hasMovedSinceStart = true;
   const isAtKnownStop = distToStepEnd < 40 || requirement !== null || isPedestrian;
 
-  if (speedKmh < 2) {
+  if (!hasMovedSinceStart) {
+    // Never driven yet (session start, stationary testing) — nothing to warn about
+    unexpectedStopState.stoppedSince = null;
+  } else if (speedKmh < 2) {
     if (!unexpectedStopState.stoppedSince) unexpectedStopState.stoppedSince = now;
     const duration = now - unexpectedStopState.stoppedSince;
     if (

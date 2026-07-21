@@ -26,6 +26,8 @@ module.exports = {
     '**/__tests__/**/*.test.ts',
     '**/__tests__/**/*.test.tsx',
   ],
+  // Claude Code task worktrees live under .claude/worktrees — never sweep them
+  testPathIgnorePatterns: ['/node_modules/', '/\\.claude/', '/ios/'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },

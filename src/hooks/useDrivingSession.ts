@@ -17,6 +17,7 @@ import {
 import { checkpointSession } from '../services/sessionPersistence';
 import { getCurrentUserId } from '../services/supabase';
 import { processMonitoringUpdate, resetMonitor, clearStepMonitoring } from '../services/eventMonitor';
+import { isTTSPlaying } from '../services/audioState';
 import {
   evaluateHazardResponse, evaluateKnowledgeResponse,
 } from '../services/claudeFeedback';
@@ -188,13 +189,16 @@ export function useDrivingSession(userId: string) {
       }
     }
 
+    // Coaching nudges (braking, unexpected stop) are low priority: always
+    // recorded, but never interrupt the examiner mid-sentence — speak() here is
+    // speakNavigation, which cuts off any conversation TTS in progress.
     if (monitorResult.brakingEvent) {
       const { text, deltaKmh, prevSpeedKmh } = monitorResult.brakingEvent;
-      speak(text);
       recordBrakingEvent(coord, prevSpeedKmh, speedKmh, deltaKmh);
+      if (!isTTSPlaying()) speak(text);
     }
 
-    if (monitorResult.unexpectedStopWarning) {
+    if (monitorResult.unexpectedStopWarning && !isTTSPlaying()) {
       speak(monitorResult.unexpectedStopWarning.text);
     }
 
