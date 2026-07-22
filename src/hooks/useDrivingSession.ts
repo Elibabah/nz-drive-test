@@ -125,6 +125,9 @@ export function useDrivingSession(userId: string) {
     const engine = engineRef.current;
     if (!engine || phaseRef.current !== 'active') return;
     executeCommands(engine.handlePosition(coord, speedKmh, Date.now()));
+    // The engine advances steps locally on completion — keep the HUD in sync.
+    // Same array reference when unchanged, so React skips the re-render.
+    setRemainingSteps(engine.remainingSteps);
   }, [executeCommands]);
 
   const updatePositionFromMap = useCallback((coord: Coordinate, speedKmh = 0) => {

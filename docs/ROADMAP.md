@@ -36,7 +36,8 @@ No new user-facing features. The app does what it does today, but safely and rel
 ## MVP-1 — A credible exam (evaluate what examiners evaluate)
 
 **Deliverables**
-- **Pure session engine** extracted from the React layer: state machine + event monitor + scoring as a dependency-free TypeScript module (input: GPS fixes + speech exchanges; output: events + utterances). React hook becomes a thin adapter. Enables deterministic replay tests.
+- ✅ **Pure session engine** extracted from the React layer (2026-07-21): state machine + event monitor + scoring as a dependency-free TypeScript module. React hook is a thin adapter; deterministic replay test in `engine/__tests__/replay.test.ts`.
+- ✅ **Navigation that actually guides** (2026-07-22, from field test): announcements now target the *next maneuver* (`steps[1]` at `steps[0]`'s end — Google's step model puts the turn at the step *start*), and step completion advances locally instead of refetching a route per step (which the 20 s debounce silenced). Field bug: Sam never gave directions.
 - **Real road data from OSM** (Overpass) prefetched along the route polyline at session start: `maxspeed`, stop signs, level crossings, pedestrian crossings, roundabouts. Replaces the hardcoded 50 km/h and the instruction-text sniffing that never fires.
 - **Deviation evaluation flow** (wire up the existing dead code): deviation → silent reroute → after reroute completes, examiner asks why → Claude classifies `justified` (road closed, obstruction, safety — no penalty, positive judgement note) vs `manoeuvring error` (mild navigation penalty). Getting lost is not a fail on the real test; disobeying signs is.
 - **NZTA-aligned scoring**: model critical errors and immediate-fail errors per the official assessment guide; produce a pass/fail verdict plus the existing numeric progress score as a secondary metric.
@@ -97,6 +98,7 @@ Found during MVP-0 field testing (July 2026). Each item is self-contained; none 
 | Item | Detail | Suggested slot |
 |---|---|---|
 | UI pass | Feedback screen shows raw markdown (`##`, `**`) from the AI debrief; general contrast/truncation audit of all screens | Before MVP-2 (audio-first UI redesigns this screen anyway) |
+| Navigation camera mode | Field request 2026-07-22: session map is 2D north-up with a dot — no turn-by-turn feel. Add a chase camera (heading-up via GPS heading, slight pitch, route line ahead) like Google Maps navigation, using the existing `animateCamera` path | MVP-2 (with the audio-first session UI) |
 | Map theme: auto day/night | Session map is hardcoded dark (fixed 2026-07-21, see ADR discussion in commit history). Dark is correct for night driving (glare, night vision) but not universally best — bright daylight glare can wash out a dark theme, and the OS system theme is the wrong proxy (reflects general preference, not ambient daylight). Switch to automatic light/dark by local sunrise/sunset (simple lat/lng calc, no extra API), with manual override as a lower-priority nice-to-have | MVP-2 (alongside the audio-first UI work) |
 | Quiet TTS at session start | `allowsRecordingIOS: true` at launch puts iOS in play-and-record → first utterances route to the earpiece. Enable record mode only around open-mic windows | With ADR-0003 spike |
 | TTS fallback telemetry | Proxy TTS failures silently fall back to the robotic on-device voice (observed once in field). Log occurrences (client event or `ai_usage` status) to measure frequency | MVP-4 (telemetry) |

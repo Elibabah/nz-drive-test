@@ -14,7 +14,7 @@ export const STEP_COMPLETION_RADIUS = 30;
 export const OFF_ROUTE_THRESHOLD = 300;
 export const REROUTE_DEBOUNCE_MS = 20_000;
 
-export type RerouteReason = 'step_complete' | 'off_route' | 'destination_reached';
+export type RerouteReason = 'off_route' | 'destination_reached';
 
 /**
  * Speak priorities are the adapter's contract:
@@ -145,14 +145,16 @@ export class SessionEngine {
       return commands;
     }
 
-    const nextStep = this.steps[0];
-    const distToEnd = distanceBetween(coord, nextStep.endLocation);
-    const stepCompleted = distToEnd <= STEP_COMPLETION_RADIUS;
+    // Google's step model: steps[0] is the segment being driven; its END is
+    // the next maneuver point, and steps[1] describes what to do there.
+    const currentStep = this.steps[0];
+    const distToManeuver = distanceBetween(coord, currentStep.endLocation);
+    const stepCompleted = distToManeuver <= STEP_COMPLETION_RADIUS;
     // Off-route = far from the step's actual geometry, not from its endpoints
-    const stepPath = nextStep.polyline ?? [nextStep.startLocation, nextStep.endLocation];
+    const stepPath = currentStep.polyline ?? [currentStep.startLocation, currentStep.endLocation];
     const offRoute = distanceToPolyline(coord, stepPath) > OFF_ROUTE_THRESHOLD;
 
-    const m = this.monitor.update(coord, speedKmh, this.steps, distToEnd, stepCompleted, nowMs);
+    const m = this.monitor.update(coord, speedKmh, this.steps, distToManeuver, stepCompleted, nowMs);
 
     if (m.speedWarning) {
       const { text, severity, speedKmh: spd, limitKmh, duration } = m.speedWarning;
@@ -182,8 +184,14 @@ export class SessionEngine {
       commands.push({ type: 'speak', text: m.unexpectedStopWarning.text, priority: 'coaching' });
     }
 
-    if (stepCompleted && canReroute) {
-      commands.push(...this.beginReroute('step_complete', coord, nowMs));
+    if (stepCompleted) {
+      // Advance locally — no network round-trip, no debounce (the field bug
+      // where a fresh route per step meant turns never got announced).
+      this.steps = this.steps.slice(1);
+      this.monitor.clearStepMonitoring();
+      if (this.steps.length === 0 && canReroute) {
+        commands.push(...this.beginReroute('destination_reached', coord, nowMs));
+      }
       return commands;
     }
     if (offRoute && canReroute) {
@@ -191,9 +199,12 @@ export class SessionEngine {
       return commands;
     }
 
-    // No announcements while a reroute is in flight — the steps are stale
-    if (!this.rerouteInFlight) {
-      for (const text of this.announcer.update(nextStep, distToEnd)) {
+    // Announce the NEXT maneuver (steps[1], happening at currentStep's end).
+    // On the final step there is no maneuver left — the destination flow
+    // regenerates the route when it is reached.
+    const maneuverStep = this.steps[1];
+    if (!this.rerouteInFlight && maneuverStep) {
+      for (const text of this.announcer.update(maneuverStep, distToManeuver)) {
         commands.push({ type: 'speak', text, priority: 'navigation' });
       }
     }
