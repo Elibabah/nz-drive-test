@@ -277,3 +277,73 @@ describe('unexpected stop monitoring', () => {
     expect(drive(0, steps).unexpectedStopWarning).toBeNull();
   });
 });
+
+// ─── Control-point based monitoring (ADR-0004) ───────────────────────────────
+
+describe('control points (OSM road data)', () => {
+  const plainSteps = [step('Continue on Yarrow Street')];
+  // ~111 m of latitude per 0.001°; helper places the car N metres north of a point
+  const P = { latitude: -36.845, longitude: 174.76 };
+  const metersNorth = (m: number) => ({ latitude: P.latitude + m / 111_320, longitude: P.longitude });
+  const driveAt = (coord: { latitude: number; longitude: number }, speedKmh: number) => {
+    now += 2000;
+    return monitor.update(coord, speedKmh, plainSteps, FAR, false, now);
+  };
+
+  it('rolling through a stop sign → violation after passing it', () => {
+    monitor.setRoadData({ controlPoints: [{ kind: 'stop_sign', location: P }], speedZones: [] });
+    driveAt(metersNorth(45), 30);
+    driveAt(metersNorth(10), 28);
+    const result = driveAt(metersNorth(-40), 30); // past and moving away
+    expect(result.stopViolation).not.toBeNull();
+    expect(result.stopViolation!.type).toBe('stop_sign');
+    expect(result.stopViolation!.complied).toBe(false);
+    expect(result.stopViolation!.lowestSpeedKmh).toBe(28);
+  });
+
+  it('full stop at a stop sign → complied, evaluated exactly once', () => {
+    monitor.setRoadData({ controlPoints: [{ kind: 'stop_sign', location: P }], speedZones: [] });
+    driveAt(metersNorth(45), 30);
+    driveAt(metersNorth(5), 1);
+    const result = driveAt(metersNorth(-40), 30);
+    expect(result.stopViolation!.complied).toBe(true);
+    expect(driveAt(metersNorth(-80), 30).stopViolation).toBeNull(); // not re-evaluated
+  });
+
+  it('waiting at a red light is NOT an unexpected stop (field bug 2026-07-22)', () => {
+    monitor.setRoadData({ controlPoints: [{ kind: 'traffic_signals', location: P }], speedZones: [] });
+    driveAt(metersNorth(500), 30); // arms hasMovedSinceStart
+    driveAt(metersNorth(20), 0);   // stopped 20 m from the light
+    now += 10_000;                 // well past the 4 s threshold
+    expect(driveAt(metersNorth(20), 0).unexpectedStopWarning).toBeNull();
+  });
+
+  it('braking hard for a control point is not harsh braking', () => {
+    monitor.setRoadData({ controlPoints: [{ kind: 'traffic_signals', location: P }], speedZones: [] });
+    driveAt(metersNorth(200), 50);
+    // 50→10 within a tick, but 60 m from the light → suppressed
+    expect(driveAt(metersNorth(60), 10).brakingEvent).toBeNull();
+  });
+
+  it('OSM speed zone overrides the hardcoded 50 limit', () => {
+    monitor.setRoadData({
+      controlPoints: [],
+      speedZones: [{ maxspeedKmh: 80, polyline: [metersNorth(1000), metersNorth(-1000)] }],
+    });
+    expect(driveAt(metersNorth(500), 75).speedWarning).toBeNull(); // 75 in an 80 zone
+    const result = driveAt(metersNorth(450), 95); // 95 in an 80 zone
+    expect(result.speedWarning).not.toBeNull();
+    expect(result.speedWarning!.limitKmh).toBe(80);
+  });
+
+  it('falls back to the default limit outside any speed zone', () => {
+    monitor.setRoadData({
+      controlPoints: [],
+      speedZones: [{ maxspeedKmh: 80, polyline: [metersNorth(1000), metersNorth(900)] }],
+    });
+    // Far from the zone geometry → default urban 50 applies
+    const result = driveAt(metersNorth(-500), 61);
+    expect(result.speedWarning).not.toBeNull();
+    expect(result.speedWarning!.limitKmh).toBe(50);
+  });
+});

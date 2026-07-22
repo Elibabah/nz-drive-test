@@ -1,6 +1,7 @@
 import { Coordinate, DrivingSession, GPSPoint, RouteStep } from '../types';
 import { NZ_DRIVING } from '../constants/nzDriving';
 import { distanceBetween, distanceToPolyline } from './geo';
+import { RoadData } from './roadData';
 import { DrivingMonitor } from './monitoring';
 import { NavigationAnnouncer } from './navigation';
 import { SessionLog } from './recording';
@@ -93,6 +94,11 @@ export class SessionEngine {
   setRoute(steps: RouteStep[]): void {
     this.steps = [...steps];
     this.announcer.resetForNewRoute();
+  }
+
+  /** Attach OSM road data (ADR-0004); safe to call any time, replaces prior data. */
+  setRoadData(roadData: RoadData): void {
+    this.monitor.setRoadData(roadData);
   }
 
   applyReroute(steps: RouteStep[]): void {

@@ -58,7 +58,7 @@ The app pre-fetches a full route (origin → random destination) at session star
 
 ### Event monitoring (`src/engine/monitoring.ts`)
 
-Speed, stop-sign/railway/pedestrian-crossing compliance, harsh braking, unexpected stops (armed only after first real movement). **Known limitation**: speed limit is hardcoded 50 km/h and stop/crossing detection parses Google instruction text that never contains those phrases — real road data via OSM is ROADMAP MVP-1 (ADR-0004).
+Speed, stop-sign/railway/pedestrian-crossing compliance, harsh braking, unexpected stops (armed only after first real movement). **Real road data via OSM** (ADR-0004): `src/services/osmRoadData.ts` fetches a corridor from Overpass at route build (speed limits, stop signs, traffic signals, give-way, level/pedestrian crossings) → `engine/roadData.ts` control points evaluated by GPS proximity. Signals/give-way suppress the unexpected-stop and harsh-braking nudges (red-light queues). Falls back to instruction-text heuristics + 50 km/h default when Overpass is unreachable.
 
 ### Voice (`src/services/voiceRecognition.ts`, `src/hooks/useVoiceConversation.ts`)
 

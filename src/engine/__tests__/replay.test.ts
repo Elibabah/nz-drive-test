@@ -120,3 +120,69 @@ describe('full-session replay', () => {
     expect(second.session.score).toEqual(session.score);
   });
 });
+
+// ─── Replay with OSM road data (ADR-0004) ────────────────────────────────────
+
+describe('replay with road data: stop sign + traffic light', () => {
+  function runRoadDataReplay() {
+    const engine = new SessionEngine({ userId: 'replay-user', nowMs: T0 });
+    engine.setRoute([HEAD_SOUTH, TURN_LEFT]);
+    engine.setRoadData({
+      controlPoints: [
+        { kind: 'stop_sign', location: B },                              // at the corner
+        { kind: 'traffic_signals', location: { latitude: B.latitude, longitude: 174.7618 } }, // ~160 m into Yarrow St
+      ],
+      speedZones: [],
+    });
+    engine.start(T0);
+
+    const transcript: TranscriptEntry[] = [];
+    let tick = 0;
+    const feed = (coord: Coordinate, speedKmh: number) => {
+      tick += 1;
+      const commands = engine.handlePosition(coord, speedKmh, T0 + tick * TICK_MS);
+      if (commands.length > 0) transcript.push({ tick, commands });
+      return commands;
+    };
+
+    // South to the corner at a constant 50 — rolling through the stop sign
+    for (let i = 1; i <= 19; i++) {
+      feed({ latitude: A.latitude - i * 0.00025, longitude: A.longitude }, 50);
+    }
+    // East along Yarrow St up to the traffic light
+    for (let i = 1; i <= 6; i++) {
+      feed({ latitude: B.latitude, longitude: B.longitude + i * 0.0003 }, 45);
+    }
+    // Waiting at the red light (~12 s stationary, right on the signal)
+    for (let i = 0; i < 6; i++) {
+      feed({ latitude: B.latitude, longitude: 174.7618 }, 0);
+    }
+    // Light turns green, carry on east
+    for (let i = 7; i <= 12; i++) {
+      feed({ latitude: B.latitude, longitude: B.longitude + i * 0.0003 }, 40);
+    }
+
+    const session = engine.complete(T0 + (tick + 1) * TICK_MS);
+    return { transcript, session };
+  }
+
+  const { transcript, session } = runRoadDataReplay();
+  const texts = speaks(transcript).map((s) => s.text);
+
+  it('catches the stop-sign roll-through via GPS proximity (no instruction text involved)', () => {
+    expect(texts).toContain('At the stop sign, you must come to a complete stop before proceeding.');
+    expect(session.stopEvents).toHaveLength(1);
+    expect(session.stopEvents[0].type).toBe('stop_sign');
+    expect(session.stopEvents[0].complied).toBe(false);
+    expect(session.score!.stopCompliance).toBe(0);
+  });
+
+  it('does NOT scold the driver for waiting at the red light (field bug 2026-07-22)', () => {
+    expect(texts.filter((t) => t.includes('avoid stopping in the carriageway'))).toHaveLength(0);
+  });
+
+  it('does NOT flag braking for the light as harsh braking', () => {
+    expect(texts.filter((t) => t.includes('brake smoothly'))).toHaveLength(0);
+    expect(session.brakingEvents).toHaveLength(0);
+  });
+});

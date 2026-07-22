@@ -7,6 +7,7 @@ import {
 import { speak, stopSpeaking } from '../services/instructor';
 import { destroyVoice } from '../services/voiceRecognition';
 import { checkpointSession } from '../services/sessionPersistence';
+import { fetchRoadData } from '../services/osmRoadData';
 import { getCurrentUserId } from '../services/supabase';
 import { isTTSPlaying } from '../services/audioState';
 import {
@@ -97,6 +98,10 @@ export function useDrivingSession(userId: string) {
       engine.applyReroute(newRoute.steps);
       setRoute(newRoute);
       setRemainingSteps(newRoute.steps);
+      // Refresh the OSM corridor for the new geometry (fire-and-forget)
+      fetchRoadData(newRoute.polylineCoordinates)
+        .then((rd) => engineRef.current?.setRoadData(rd))
+        .catch(() => {});
     } catch {
       engine.rerouteFailed();
     } finally {
@@ -179,6 +184,12 @@ export function useDrivingSession(userId: string) {
       engineRef.current = engine;
       setSession(engine.session);
       setPhaseWithRef('ready');
+
+      // OSM road data for the corridor (ADR-0004) — fire-and-forget; the
+      // engine falls back to instruction-text heuristics until it arrives
+      fetchRoadData(routeData.polylineCoordinates)
+        .then((rd) => engineRef.current?.setRoadData(rd))
+        .catch(() => {});
     } catch (err: any) {
       setError(err?.message ?? 'Failed to start session. Check your internet connection.');
       setPhaseWithRef('idle');

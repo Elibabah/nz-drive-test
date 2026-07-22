@@ -1,5 +1,7 @@
 import { RouteStep, Coordinate } from '../types';
 import { NZ_DRIVING } from '../constants/nzDriving';
+import { distanceBetween } from './geo';
+import { RoadData, EMPTY_ROAD_DATA, speedLimitAt } from './roadData';
 
 // Driving-behaviour monitoring: speed, stop/crossing compliance, harsh
 // braking, unexpected stops. Instance-based and clock-injected (nowMs) so the
@@ -49,6 +51,21 @@ export interface MonitorResult {
   unexpectedStopWarning: { text: string } | null;
 }
 
+// Control-point compliance rules (ADR-0004): entry radius for tracking and the
+// lowest-speed threshold that counts as complied. Signals/give-way have no
+// compliance rule — they only suppress stop/braking nudges.
+const CP_RULES: Partial<Record<string, { enterM: number; thresholdKmh: number }>> = {
+  stop_sign: { enterM: 50, thresholdKmh: 2 },
+  railway_crossing: { enterM: 80, thresholdKmh: 20 },
+  pedestrian_crossing: { enterM: 50, thresholdKmh: 20 },
+};
+/** Passed the point and moving away by this much → evaluate compliance. */
+const CP_EXIT_HYSTERESIS_M = 25;
+/** Any control point within this distance suppresses the unexpected-stop nudge (red-light queues). */
+const CP_SUPPRESS_STOP_M = 60;
+/** Any control point within this distance excludes braking from harshness checks. */
+const CP_SUPPRESS_BRAKING_M = 80;
+
 // ─── Monitor ──────────────────────────────────────────────────────────────────
 
 interface SpeedState {
@@ -79,6 +96,16 @@ export class DrivingMonitor {
   private unexpectedStopLastWarnedAt = 0;
   // Sessions start parked — stop monitoring only arms once the car has moved
   private hasMovedSinceStart = false;
+  // Road data (ADR-0004): control-point tracking by proximity
+  private roadData: RoadData = EMPTY_ROAD_DATA;
+  private cpTracking = new Map<number, { lowestKmh: number; minDistM: number }>();
+  private cpEvaluated = new Set<number>();
+
+  setRoadData(roadData: RoadData): void {
+    this.roadData = roadData;
+    this.cpTracking.clear();
+    this.cpEvaluated.clear();
+  }
 
   reset(): void {
     this.speedState = { overLimitSince: null, warnedForCurrentIncident: false, lastWarnedSpeedKmh: 0 };
@@ -90,6 +117,8 @@ export class DrivingMonitor {
     this.stoppedSince = null;
     this.unexpectedStopLastWarnedAt = 0;
     this.hasMovedSinceStart = false;
+    this.cpTracking.clear();
+    this.cpEvaluated.clear();
   }
 
   clearStepMonitoring(): void {
@@ -106,9 +135,44 @@ export class DrivingMonitor {
     nowMs: number
   ): MonitorResult {
     const result: MonitorResult = { speedWarning: null, stopViolation: null, brakingEvent: null, unexpectedStopWarning: null };
-    const limitKmh = getSpeedLimitKmh(steps);
+    // Real limit from OSM speed zones when available; instruction-text fallback otherwise
+    const limitKmh = speedLimitAt(this.roadData, coord, getSpeedLimitKmh(steps));
     const requirement = detectStopRequirement(steps[0]);
     const isPedestrian = detectPedestrianCrossing(steps[0]);
+    const hasRoadData = this.roadData.controlPoints.length > 0;
+
+    // ── Control-point scan (ADR-0004) ────────────────────────────────────────
+    // Proximity flags for nudge suppression + compliance tracking windows.
+    let nearCpStopSuppress = false;
+    let nearCpBrakingSuppress = false;
+    this.roadData.controlPoints.forEach((cp, i) => {
+      const d = distanceBetween(coord, cp.location);
+      if (d < CP_SUPPRESS_STOP_M) nearCpStopSuppress = true;
+      if (d < CP_SUPPRESS_BRAKING_M) nearCpBrakingSuppress = true;
+
+      const rule = CP_RULES[cp.kind];
+      if (!rule || this.cpEvaluated.has(i)) return;
+      const tracked = this.cpTracking.get(i);
+      if (tracked && d > tracked.minDistM + CP_EXIT_HYSTERESIS_M) {
+        // Passed the point and moving away → evaluate compliance
+        this.cpEvaluated.add(i);
+        this.cpTracking.delete(i);
+        if (!result.stopViolation) {
+          result.stopViolation = {
+            complied: tracked.lowestKmh <= rule.thresholdKmh,
+            lowestSpeedKmh: tracked.lowestKmh,
+            type: cp.kind as 'stop_sign' | 'railway_crossing' | 'pedestrian_crossing',
+          };
+        }
+      } else if (d < rule.enterM) {
+        if (!tracked) {
+          this.cpTracking.set(i, { lowestKmh: speedKmh, minDistM: d });
+        } else {
+          tracked.lowestKmh = Math.min(tracked.lowestKmh, speedKmh);
+          tracked.minDistM = Math.min(tracked.minDistM, d);
+        }
+      }
+    });
 
     // ── Speed monitoring ─────────────────────────────────────────────────────
     const overBy = speedKmh - limitKmh;
@@ -135,10 +199,11 @@ export class DrivingMonitor {
       this.speedState.lastWarnedSpeedKmh = 0;
     }
 
-    // ── Stop sign / railway crossing monitoring ──────────────────────────────
+    // ── Stop sign / railway crossing monitoring (legacy text path) ───────────
+    // Only when no OSM control points exist — the CP scan above is authoritative
     const stopZoneDistance = requirement === 'railway_crossing' ? 80 : 50;
 
-    if (requirement && distToStepEnd < stopZoneDistance) {
+    if (!hasRoadData && requirement && distToStepEnd < stopZoneDistance) {
       if (!this.stopState || this.stopState.requirement !== requirement) {
         this.stopState = { requirement, lowestSpeedKmh: speedKmh, evaluated: false };
       } else {
@@ -153,8 +218,8 @@ export class DrivingMonitor {
       this.stopState = null;
     }
 
-    // ── Pedestrian crossing monitoring ───────────────────────────────────────
-    if (isPedestrian && distToStepEnd < 50) {
+    // ── Pedestrian crossing monitoring (legacy text path) ────────────────────
+    if (!hasRoadData && isPedestrian && distToStepEnd < 50) {
       if (!this.pedestrianState) {
         this.pedestrianState = { lowestSpeedKmh: speedKmh, evaluated: false };
       } else {
@@ -169,8 +234,8 @@ export class DrivingMonitor {
     }
 
     // ── Harsh braking ────────────────────────────────────────────────────────
-    // Exclude expected braking at stops/crossings
-    const isAtKnownStopForBraking = distToStepEnd < 80 || requirement !== null || isPedestrian;
+    // Exclude expected braking at stops/crossings (OSM control points included)
+    const isAtKnownStopForBraking = distToStepEnd < 80 || requirement !== null || isPedestrian || nearCpBrakingSuppress;
 
     if (this.brakingPrevTimestamp > 0) {
       const timeDelta = (nowMs - this.brakingPrevTimestamp) / 1000;
@@ -194,8 +259,10 @@ export class DrivingMonitor {
     this.brakingPrevTimestamp = nowMs;
 
     // ── Unexpected stopping ──────────────────────────────────────────────────
+    // Suppressed near ANY control point — waiting at a red light or queueing
+    // at a stop sign is correct driving (field test 2026-07-22)
     if (speedKmh >= 10) this.hasMovedSinceStart = true;
-    const isAtKnownStop = distToStepEnd < 40 || requirement !== null || isPedestrian;
+    const isAtKnownStop = distToStepEnd < 40 || requirement !== null || isPedestrian || nearCpStopSuppress;
 
     if (!this.hasMovedSinceStart) {
       // Never driven yet (session start, stationary testing) — nothing to warn about
