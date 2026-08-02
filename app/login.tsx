@@ -74,5 +74,5 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.6 },
   googleIcon: { fontSize: 20, fontWeight: '900', color: '#4285F4' },
   googleText: { color: '#000000', fontSize: 17, fontWeight: '700' },
-  disclaimer: { color: 'rgba(255,255,255,0.25)', fontSize: 12, textAlign: 'center', lineHeight: 18 },
+  disclaimer: { color: 'rgba(255,255,255,0.5)', fontSize: 12, textAlign: 'center', lineHeight: 18 },
 });

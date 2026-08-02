@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   micDotSpeaking: { backgroundColor: '#4ade80' },
   examinerContent: { flex: 1 },
   examinerText: { color: '#fff', fontSize: 17, lineHeight: 23, fontWeight: '600' },
-  examinerHint: { color: 'rgba(255,255,255,0.3)', fontSize: 14 },
+  examinerHint: { color: 'rgba(255,255,255,0.5)', fontSize: 14 },
   listeningLabel: { color: '#f87171', fontSize: 12, marginTop: 4, fontWeight: '600' },
 
   bottomBar: {

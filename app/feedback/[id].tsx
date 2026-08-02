@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../src/services/supabase';
+import MarkdownText from '../../src/components/MarkdownText';
 
 interface EventLogEntry {
   relativeMinute: number;
@@ -64,7 +65,7 @@ export default function FeedbackScreen() {
   function formatDuration(seconds: number): string {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    return `${m} min ${s} sec`;
+    return `${m}m ${s}s`;
   }
 
   function scoreColor(score: number): string {
@@ -163,7 +164,7 @@ export default function FeedbackScreen() {
               <Text style={styles.feedbackIcon}>🤖</Text>
               <Text style={styles.feedbackTitle}>Instructor Feedback</Text>
             </View>
-            <Text style={styles.feedbackText}>{session.feedback}</Text>
+            <MarkdownText textStyle={styles.feedbackText}>{session.feedback}</MarkdownText>
           </View>
         )}
 
@@ -288,7 +289,7 @@ const styles = StyleSheet.create({
   container: { padding: 20, gap: 20, paddingBottom: 40 },
   header: { alignItems: 'center', gap: 6, paddingTop: 8 },
   title: { color: '#ffffff', fontSize: 26, fontWeight: '800' },
-  date: { color: 'rgba(255,255,255,0.45)', fontSize: 14 },
+  date: { color: 'rgba(255,255,255,0.55)', fontSize: 14 },
   scoreCard: {
     alignItems: 'center',
     gap: 12,
@@ -305,7 +306,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#131929',
   },
   scoreNumber: { fontSize: 42, fontWeight: '900' },
-  scoreMax: { color: 'rgba(255,255,255,0.4)', fontSize: 16, marginBottom: 6 },
+  scoreMax: { color: 'rgba(255,255,255,0.55)', fontSize: 16, marginBottom: 6 },
   scoreLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 15 },
   statsGrid: { flexDirection: 'row', gap: 10 },
   statCard: {
@@ -320,7 +321,7 @@ const styles = StyleSheet.create({
   },
   statIcon: { fontSize: 20 },
   statValue: { color: '#ffffff', fontSize: 15, fontWeight: '700', textAlign: 'center' },
-  statLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, textAlign: 'center' },
+  statLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 11, textAlign: 'center' },
   section: { gap: 12 },
   sectionTitle: { color: '#ffffff', fontSize: 17, fontWeight: '700' },
   scoreBarContainer: { gap: 8 },

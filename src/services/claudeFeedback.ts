@@ -239,7 +239,7 @@ Write a warm, specific, actionable debrief in under 320 words. Structure:
 4. Top 2-3 things to practise before the test
 5. Closing sentence
 
-Use NZ English spelling. Remember NZ drives on the LEFT. Address the driver directly as "you". Do not use bullet points — write in paragraphs.`;
+Use NZ English spelling. Remember NZ drives on the LEFT. Address the driver directly as "you". Do not use bullet points — write in paragraphs. Plain text only: no markdown of any kind (no ##, no **, no numbered headings) — the text is displayed as-is.`;
 
   return callClaude(prompt, 700, MODEL_FEEDBACK);
 }

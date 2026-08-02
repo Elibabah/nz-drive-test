@@ -97,7 +97,7 @@ Found during MVP-0 field testing (July 2026). Each item is self-contained; none 
 
 | Item | Detail | Suggested slot |
 |---|---|---|
-| UI pass | Feedback screen shows raw markdown (`##`, `**`) from the AI debrief; general contrast/truncation audit of all screens | Before MVP-2 (audio-first UI redesigns this screen anyway) |
+| ~~UI pass~~ | ✅ 2026-08-02: debrief rendered via `MarkdownText` (handles legacy stored markdown; prompt now forbids markdown too); contrast pass raised all sub-AA text (worst: 0.25–0.3 alpha) to ≥ 0.5 across home/history/feedback/login/session; duration stat no longer truncates | Done |
 | Navigation camera mode | Field request 2026-07-22: session map is 2D north-up with a dot — no turn-by-turn feel. Add a chase camera (heading-up via GPS heading, slight pitch, route line ahead) like Google Maps navigation, using the existing `animateCamera` path | MVP-2 (with the audio-first session UI) |
 | Map theme: auto day/night | Session map is hardcoded dark (fixed 2026-07-21, see ADR discussion in commit history). Dark is correct for night driving (glare, night vision) but not universally best — bright daylight glare can wash out a dark theme, and the OS system theme is the wrong proxy (reflects general preference, not ambient daylight). Switch to automatic light/dark by local sunrise/sunset (simple lat/lng calc, no extra API), with manual override as a lower-priority nice-to-have | MVP-2 (alongside the audio-first UI work) |
 | Quiet TTS at session start | `allowsRecordingIOS: true` at launch puts iOS in play-and-record → first utterances route to the earpiece. Enable record mode only around open-mic windows | With ADR-0003 spike |
