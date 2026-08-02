@@ -39,14 +39,14 @@ No new user-facing features. The app does what it does today, but safely and rel
 - ✅ **Pure session engine** extracted from the React layer (2026-07-21): state machine + event monitor + scoring as a dependency-free TypeScript module. React hook is a thin adapter; deterministic replay test in `engine/__tests__/replay.test.ts`.
 - ✅ **Navigation that actually guides** (2026-07-22, from field test): announcements now target the *next maneuver* (`steps[1]` at `steps[0]`'s end — Google's step model puts the turn at the step *start*), and step completion advances locally instead of refetching a route per step (which the 20 s debounce silenced). Field bug: Sam never gave directions.
 - ✅ **Real road data from OSM** (2026-07-23, ADR-0004): Overpass corridor prefetched per route — `maxspeed` zones, stop signs, traffic signals, give-way, level/pedestrian crossings — consumed by the engine as typed control points evaluated by GPS proximity. Signals suppress the unexpected-stop/braking nudges (red-light field bug). Graceful fallback to v1 heuristics when Overpass is down. *(Pending field validation on a real drive.)*
-- **Deviation evaluation flow** (wire up the existing dead code): deviation → silent reroute → after reroute completes, examiner asks why → Claude classifies `justified` (road closed, obstruction, safety — no penalty, positive judgement note) vs `manoeuvring error` (mild navigation penalty). Getting lost is not a fail on the real test; disobeying signs is.
+- ✅ **Deviation evaluation flow** (2026-08-02): deviation → silent reroute (the immediate scolding is gone) → engine emits `askDeviation` once the new route is applied → examiner asks why → Claude classifies `justified` (road closed, obstruction, safety — no penalty, `navigation_events.justified`, positive judgement note) vs `manoeuvring error` (mild penalty kept, same as the AI-unreachable fallback). Engine-tested in `engine/__tests__/deviation.test.ts`. *(Pending field validation.)*
 - **NZTA-aligned scoring**: model critical errors and immediate-fail errors per the official assessment guide; produce a pass/fail verdict plus the existing numeric progress score as a secondary metric.
 - Destination/route validation: destination snapped to the urban road network (no sea, no motorway, no unformed roads).
 
 **Exit criteria**
 - [ ] A replayed real-drive GPS track produces identical event streams across runs.
 - [ ] Driving past a mapped stop sign at 15 km/h produces a stop violation; a compliant full stop produces a compliant event.
-- [ ] A deviation with a spoken justification ("the street was closed") does not reduce the navigation score.
+- [x] A deviation with a spoken justification ("the street was closed") does not reduce the navigation score. *(2026-08-02: unit-tested end-to-end in the engine; field validation pending)*
 - [ ] Session summary shows PASS / FAIL with the error tally, mirroring NZTA categories.
 
 ## MVP-2 — Truly hands-free
@@ -105,7 +105,7 @@ Found during MVP-0 field testing (July 2026). Each item is self-contained; none 
 | npm audit | 26 vulnerabilities reported (2 critical) at last install — triage which are real for a client app | MVP-4 |
 | jest-expo 55 vs expo 54 | Version mismatch works but is accidental; align on next SDK upgrade | Next SDK bump |
 | `claude-sonnet-4-6` model id | Debrief model pinned in client + proxy allowlist; review against current Anthropic lineup (sonnet-5) when touching aiTransport | MVP-1 (while in the code) |
-| Decision-questions dead code | `DecisionEvent` flow exists but nothing triggers it — being wired as part of MVP-1 deviation evaluation | MVP-1 (planned) |
+| ~~Decision-questions dead code~~ | ✅ 2026-08-02: wired — post-reroute deviation questions record `DecisionEvent` (trigger `off_route`) and drive the justified/manoeuvring-error classification | Done |
 
 ## Decision log
 

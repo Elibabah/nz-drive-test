@@ -148,4 +148,9 @@ export class SessionLog {
     s.navigationEvents.push(event);
     return event;
   }
+
+  markNavigationEventJustified(eventId: string): void {
+    const e = this.session?.navigationEvents.find((x) => x.id === eventId);
+    if (e) e.justified = true;
+  }
 }

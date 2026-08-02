@@ -146,6 +146,46 @@ quality must be exactly one of: "good", "poor"`;
   return { quality: response.trim().length > 5 ? 'good' : 'poor', feedback: 'Try to explain your reasoning clearly when asked.' };
 }
 
+// ─── Deviation classification (MVP-1) ─────────────────────────────────────────
+// After a silent reroute the examiner asks why the driver went a different
+// way. Justified (road closed, obstruction, safety) carries no penalty;
+// a manoeuvring error keeps the mild navigation penalty — which is also the
+// fallback when the AI is unreachable, matching pre-MVP-1 behaviour.
+
+export async function evaluateDeviationResponse(
+  instructionGiven: string,
+  question: string,
+  response: string
+): Promise<{ classification: 'justified' | 'manoeuvring_error'; feedback: string }> {
+  if (!response || response.trim().length < 3) {
+    return { classification: 'manoeuvring_error', feedback: 'No reason was given for the deviation.' };
+  }
+
+  const evalPrompt = `You are a NZ driving examiner. During a practice test you instructed: "${instructionGiven}". The driver went a different way. You asked: "${question}". The driver answered: "${response}".
+
+Classify the deviation:
+- "justified": a genuine external reason — road closed, obstruction, roadworks, an emergency vehicle, avoiding a hazard, or any safety-first decision. On the real NZ test this shows good judgement and carries NO penalty.
+- "manoeuvring_error": the driver missed the turn, got confused, or simply made a mistake. Getting lost is not a fail — it is a mild navigation error.
+
+Respond with ONLY valid JSON:
+{"classification":"justified","feedback":"Brief specific feedback in one sentence, addressed to the driver."}
+
+classification must be exactly one of: "justified", "manoeuvring_error"`;
+
+  try {
+    const text = await callClaude(evalPrompt, 100);
+    const match = text.match(/\{[\s\S]*?\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (['justified', 'manoeuvring_error'].includes(parsed.classification)) {
+        return { classification: parsed.classification, feedback: parsed.feedback ?? '' };
+      }
+    }
+  } catch { /* fall through */ }
+
+  return { classification: 'manoeuvring_error', feedback: 'A missed instruction is only a minor error — keep following the directions and carry on.' };
+}
+
 // ─── Full session feedback ────────────────────────────────────────────────────
 
 export async function generateSessionFeedback(session: DrivingSession): Promise<string> {

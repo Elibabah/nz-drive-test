@@ -103,6 +103,8 @@ export interface NavigationEvent {
   location: Coordinate;
   instructionGiven: string;
   type: 'wrong_turn' | 'off_route';
+  /** Deviation excused after the driver's explanation (road closed, obstruction, safety) — no navigation penalty. */
+  justified?: boolean;
 }
 
 export interface EventLogEntry {

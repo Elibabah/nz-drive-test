@@ -34,6 +34,7 @@ export default function SessionScreen() {
     timeRemainingMs,
     isRerouting,
     error,
+    deviationPrompt,
     startSession,
     beginDriving,
     finishSession,
@@ -42,14 +43,22 @@ export default function SessionScreen() {
     getNavigationContext,
     recordHazardExchange,
     recordKnowledgeExchange,
+    recordDeviationExchange,
   } = useDrivingSession(userId);
 
-  const { convState, instructorText, isListening, isSpeaking, tapToSpeak } = useVoiceConversation({
+  const { convState, instructorText, isListening, isSpeaking, tapToSpeak, askDeviationQuestion } = useVoiceConversation({
     getContext: getNavigationContext,
     isActive: phase === 'active',
     recordHazardExchange,
     recordKnowledgeExchange,
+    recordDeviationExchange,
   });
+
+  // Engine → examiner: after a silent off-route reroute, ask why the driver
+  // deviated (each prompt has a fresh id, so re-deviations re-ask).
+  useEffect(() => {
+    if (deviationPrompt) askDeviationQuestion(deviationPrompt.instructionGiven);
+  }, [deviationPrompt?.id]);
 
   // Pulse animation when mic is open
   useEffect(() => {

@@ -48,6 +48,7 @@ function opts(overrides: Record<string, unknown> = {}) {
     isActive: false,
     recordHazardExchange: jest.fn(),
     recordKnowledgeExchange: jest.fn(),
+    recordDeviationExchange: jest.fn(),
     ...overrides,
   };
 }

@@ -26,7 +26,10 @@ export type SpeakPriority = 'safety' | 'navigation' | 'coaching';
 
 export type EngineCommand =
   | { type: 'speak'; text: string; priority: SpeakPriority }
-  | { type: 'requestReroute'; reason: RerouteReason };
+  | { type: 'requestReroute'; reason: RerouteReason }
+  // Reroute after a deviation completed — the examiner should now ask the
+  // driver why they went a different way (MVP-1 deviation evaluation).
+  | { type: 'askDeviation'; instructionGiven: string };
 
 export interface EngineNavigationContext {
   position: Coordinate;
@@ -49,6 +52,7 @@ export class SessionEngine {
   private rerouteInFlight = false;
   private lastPosition: Coordinate | null = null;
   private lastSpeedKmh = 0;
+  private pendingDeviation: { navEventId: string; instructionGiven: string } | null = null;
   private readonly durationMs: number;
 
   constructor(opts: { userId: string; nowMs: number; sessionDurationMs?: number }) {
@@ -101,10 +105,16 @@ export class SessionEngine {
     this.monitor.setRoadData(roadData);
   }
 
-  applyReroute(steps: RouteStep[]): void {
+  applyReroute(steps: RouteStep[]): EngineCommand[] {
     this.steps = [...steps];
     this.announcer.resetForNewRoute();
     this.rerouteInFlight = false;
+    // A deviation reroute is silent; once the new route is in place the
+    // examiner asks for the reason (justified vs manoeuvring error).
+    if (this.pendingDeviation) {
+      return [{ type: 'askDeviation', instructionGiven: this.pendingDeviation.instructionGiven }];
+    }
+    return [];
   }
 
   rerouteFailed(): void {
@@ -223,16 +233,14 @@ export class SessionEngine {
     this.monitor.clearStepMonitoring();
 
     if (reason === 'off_route') {
+      // Silent reroute (ROADMAP MVP-1): no scolding at the moment of the
+      // deviation — record it, reroute, and ask for the reason afterwards.
+      // Getting lost is not a fail on the real test; disobeying signs is.
       const instrWas = this.announcer.lastInstructionGiven;
       if (instrWas) {
         const lower = instrWas.toLowerCase();
-        this.log.recordNavigationEvent(coord, instrWas, lower.includes('turn') ? 'wrong_turn' : 'off_route', nowMs);
-        const text = lower.includes('turn left')
-          ? 'I asked you to turn left. I will give you new directions from here.'
-          : lower.includes('turn right')
-          ? 'I asked you to turn right. I will give you new directions from here.'
-          : 'You have gone off route. I will give you new directions from here.';
-        out.push({ type: 'speak', text, priority: 'navigation' });
+        const navEvent = this.log.recordNavigationEvent(coord, instrWas, lower.includes('turn') ? 'wrong_turn' : 'off_route', nowMs);
+        this.pendingDeviation = { navEventId: navEvent.id, instructionGiven: instrWas };
       }
     }
 
@@ -260,5 +268,29 @@ export class SessionEngine {
 
   applyKnowledgeEvaluation(eventId: string, quality: 'correct' | 'partial' | 'incorrect', feedback: string): void {
     this.log.updateKnowledgeEvaluation(eventId, quality, feedback);
+  }
+
+  /**
+   * The driver answered the post-reroute "why did you go a different way?"
+   * question. Links the decision event to the deviation's navigation event so
+   * a justified explanation can lift the penalty.
+   */
+  recordDeviationExchange(question: string, response: string, nowMs: number): { decisionEventId: string; navEventId: string } | null {
+    const pending = this.pendingDeviation;
+    if (!pending || !this.lastPosition) return null;
+    this.pendingDeviation = null;
+    const event = this.log.recordDecisionEvent(this.lastPosition, 'off_route', question, response, nowMs);
+    return { decisionEventId: event.id, navEventId: pending.navEventId };
+  }
+
+  applyDeviationEvaluation(
+    ids: { decisionEventId: string; navEventId: string },
+    classification: 'justified' | 'manoeuvring_error',
+    feedback: string
+  ): void {
+    this.log.updateDecisionEvaluation(ids.decisionEventId, classification === 'justified' ? 'good' : 'poor', feedback);
+    if (classification === 'justified') {
+      this.log.markNavigationEventJustified(ids.navEventId);
+    }
   }
 }

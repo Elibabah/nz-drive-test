@@ -117,6 +117,7 @@ export function buildNavigationRows(s: DrivingSession) {
     ...base(e),
     instruction_given: e.instructionGiven,
     type: e.type,
+    justified: e.justified ?? false,
   }));
 }
 

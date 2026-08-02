@@ -21,6 +21,7 @@ interface UseVoiceConversationOptions {
   isActive: boolean;
   recordHazardExchange: (prompt: string, response: string) => void;
   recordKnowledgeExchange: (question: string, expectedAnswer: string, response: string) => void;
+  recordDeviationExchange: (instructionGiven: string, question: string, response: string) => void;
 }
 
 export function useVoiceConversation({
@@ -28,6 +29,7 @@ export function useVoiceConversation({
   isActive,
   recordHazardExchange,
   recordKnowledgeExchange,
+  recordDeviationExchange,
 }: UseVoiceConversationOptions) {
   const [convState, setConvState] = useState<ConvState>('idle');
   const [instructorText, setInstructorText] = useState('');
@@ -41,6 +43,8 @@ export function useVoiceConversation({
   // Track what question is pending (to correctly record driver response)
   const pendingHazardRef = useRef<string | null>(null);
   const pendingKnowledgeRef = useRef<{ question: string; expectedAnswer: string } | null>(null);
+  const pendingDeviationRef = useRef<{ instructionGiven: string; question: string } | null>(null);
+  const deviationRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function setState(s: ConvState) {
     convStateRef.current = s;
@@ -113,7 +117,11 @@ export function useVoiceConversation({
     const response = await respondToDriver(text, ctx).catch(() => 'Good. Carry on.');
 
     // Record if responding to a pending prompt
-    if (pendingHazardRef.current) {
+    if (pendingDeviationRef.current) {
+      const { instructionGiven, question } = pendingDeviationRef.current;
+      recordDeviationExchange(instructionGiven, question, text);
+      pendingDeviationRef.current = null;
+    } else if (pendingHazardRef.current) {
       recordHazardExchange(pendingHazardRef.current, text);
       pendingHazardRef.current = null;
     } else if (pendingKnowledgeRef.current) {
@@ -134,6 +142,21 @@ export function useVoiceConversation({
       setState('idle');
     }
   }
+
+  // ─── Deviation question (after a silent off-route reroute) ──────────────────
+
+  const askDeviationQuestion = useCallback((instructionGiven: string) => {
+    if (deviationRetryRef.current) { clearTimeout(deviationRetryRef.current); deviationRetryRef.current = null; }
+    if (!isActiveRef.current) return;
+    if (convStateRef.current !== 'idle') {
+      // Navigation TTS or another exchange is in flight — ask once it settles
+      deviationRetryRef.current = setTimeout(() => askDeviationQuestion(instructionGiven), 5_000);
+      return;
+    }
+    const question = 'I noticed you went a different way back there. Was there a reason for that?';
+    pendingDeviationRef.current = { instructionGiven, question };
+    examinerSay(question, true);
+  }, []);
 
   // ─── Manual tap-to-speak (called from UI) ────────────────────────────────────
 
@@ -211,6 +234,7 @@ export function useVoiceConversation({
       resetConversation();
       pendingHazardRef.current = null;
       pendingKnowledgeRef.current = null;
+      pendingDeviationRef.current = null;
 
       const announce = async () => {
         const text = await getSessionStartMessage().catch(
@@ -226,6 +250,7 @@ export function useVoiceConversation({
       clearMicTimer();
       if (hazardTimerRef.current) clearTimeout(hazardTimerRef.current);
       if (knowledgeTimerRef.current) clearTimeout(knowledgeTimerRef.current);
+      if (deviationRetryRef.current) clearTimeout(deviationRetryRef.current);
       stopListening().catch(() => {});
       stopAllSpeech().catch(() => {});
       setState('idle');
@@ -238,6 +263,7 @@ export function useVoiceConversation({
       clearMicTimer();
       if (hazardTimerRef.current) clearTimeout(hazardTimerRef.current);
       if (knowledgeTimerRef.current) clearTimeout(knowledgeTimerRef.current);
+      if (deviationRetryRef.current) clearTimeout(deviationRetryRef.current);
       stopListening().catch(() => {});
       destroyVoice().catch(() => {});
     };
@@ -249,5 +275,6 @@ export function useVoiceConversation({
     isListening: convState === 'open',
     isSpeaking: convState === 'speaking',
     tapToSpeak,
+    askDeviationQuestion,
   };
 }

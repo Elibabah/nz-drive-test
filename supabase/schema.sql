@@ -159,8 +159,13 @@ create table if not exists public.navigation_events (
   longitude double precision not null,
   instruction_given text not null,
   type text not null check (type in ('wrong_turn', 'off_route')),
+  justified boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+-- Deviation evaluation (MVP-1): column added after the table shipped —
+-- the create-if-not-exists above won't add it to an existing deployment.
+alter table public.navigation_events add column if not exists justified boolean not null default false;
 
 create index if not exists knowledge_events_session_id_idx on public.knowledge_events(session_id);
 create index if not exists decision_events_session_id_idx on public.decision_events(session_id);

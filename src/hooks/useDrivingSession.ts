@@ -11,7 +11,7 @@ import { fetchRoadData } from '../services/osmRoadData';
 import { getCurrentUserId } from '../services/supabase';
 import { isTTSPlaying } from '../services/audioState';
 import {
-  evaluateHazardResponse, evaluateKnowledgeResponse,
+  evaluateHazardResponse, evaluateKnowledgeResponse, evaluateDeviationResponse,
 } from '../services/claudeFeedback';
 import { NavigationContext } from '../services/aiInstructor';
 import { SessionEngine, EngineCommand, RerouteReason } from '../engine/sessionEngine';
@@ -39,6 +39,9 @@ export function useDrivingSession(userId: string) {
   const [timeRemainingMs, setTimeRemainingMs] = useState(NZ_DRIVING.SESSION_DURATION_MS);
   const [isRerouting, setIsRerouting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the engine wants the examiner to ask why the driver deviated
+  // (after a silent off-route reroute). Consumed by the voice layer.
+  const [deviationPrompt, setDeviationPrompt] = useState<{ id: number; instructionGiven: string } | null>(null);
 
   const engineRef = useRef<SessionEngine | null>(null);
   const phaseRef = useRef<SessionPhase>('idle');
@@ -84,6 +87,16 @@ export function useDrivingSession(userId: string) {
       .catch(() => {});
   }, []);
 
+  const recordDeviationExchange = useCallback((instructionGiven: string, question: string, response: string) => {
+    const engine = engineRef.current;
+    const ids = engine?.recordDeviationExchange(question, response, Date.now());
+    setDeviationPrompt(null);
+    if (!engine || !ids) return;
+    evaluateDeviationResponse(instructionGiven, question, response)
+      .then(({ classification, feedback }) => engine.applyDeviationEvaluation(ids, classification, feedback))
+      .catch(() => {});
+  }, []);
+
   // ─── Command execution (the adapter side of the engine contract) ─────────────
 
   const performReroute = useCallback(async (_reason: RerouteReason) => {
@@ -95,7 +108,11 @@ export function useDrivingSession(userId: string) {
     setIsRerouting(true);
     try {
       const newRoute = await rerouteFromPosition(origin, destination, GOOGLE_MAPS_API_KEY);
-      engine.applyReroute(newRoute.steps);
+      for (const cmd of engine.applyReroute(newRoute.steps)) {
+        if (cmd.type === 'askDeviation') {
+          setDeviationPrompt({ id: Date.now(), instructionGiven: cmd.instructionGiven });
+        }
+      }
       setRoute(newRoute);
       setRemainingSteps(newRoute.steps);
       // Refresh the OSM corridor for the new geometry (fire-and-forget)
@@ -118,6 +135,8 @@ export function useDrivingSession(userId: string) {
         speak(cmd.text);
       } else if (cmd.type === 'requestReroute') {
         performReroute(cmd.reason);
+      } else if (cmd.type === 'askDeviation') {
+        setDeviationPrompt({ id: Date.now(), instructionGiven: cmd.instructionGiven });
       }
     }
   }, [performReroute]);
@@ -248,6 +267,7 @@ export function useDrivingSession(userId: string) {
     setRoute(null);
     setRemainingSteps([]);
     setTimeRemainingMs(NZ_DRIVING.SESSION_DURATION_MS);
+    setDeviationPrompt(null);
     sessionDestinationRef.current = null;
   }, [cleanup, setPhaseWithRef]);
 
@@ -262,6 +282,7 @@ export function useDrivingSession(userId: string) {
     timeRemainingMs,
     isRerouting,
     error,
+    deviationPrompt,
     startSession,
     beginDriving,
     finishSession,
@@ -270,5 +291,6 @@ export function useDrivingSession(userId: string) {
     getNavigationContext,
     recordHazardExchange,
     recordKnowledgeExchange,
+    recordDeviationExchange,
   };
 }

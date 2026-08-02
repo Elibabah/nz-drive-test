@@ -44,8 +44,10 @@ export function computeScore(session: DrivingSession): SessionScore {
   const stopScore = session.stopEvents.length === 0 ? 100
     : Math.round((session.stopEvents.filter((e) => e.complied).length / session.stopEvents.length) * 100);
 
-  // Navigation compliance
-  const navScore = Math.max(0, 100 - session.navigationEvents.length * 10);
+  // Navigation compliance — justified deviations (road closed, obstruction,
+  // safety) carry no penalty, mirroring the real test
+  const unjustifiedNavEvents = session.navigationEvents.filter((e) => !e.justified);
+  const navScore = Math.max(0, 100 - unjustifiedNavEvents.length * 10);
 
   // Session completion
   const sessionCompletion = sessionMinutes >= 18 ? 100 : Math.round((sessionMinutes / 20) * 100);
@@ -101,7 +103,11 @@ export function computeScore(session: DrivingSession): SessionScore {
   }
 
   for (const e of session.navigationEvents) {
-    allEvents.push({ timestamp: e.timestamp, entry: { relativeMinute: relMin(e.timestamp), type: 'navigation', description: `${e.type === 'wrong_turn' ? 'Wrong turn' : 'Off route'} after "${e.instructionGiven.slice(0, 40)}"`, severity: 'warning' } });
+    const base = e.type === 'wrong_turn' ? 'Wrong turn' : 'Off route';
+    const description = e.justified
+      ? `${base} after "${e.instructionGiven.slice(0, 40)}" — justified, no penalty`
+      : `${base} after "${e.instructionGiven.slice(0, 40)}"`;
+    allEvents.push({ timestamp: e.timestamp, entry: { relativeMinute: relMin(e.timestamp), type: 'navigation', description, severity: e.justified ? 'good' : 'warning' } });
   }
 
   allEvents.sort((a, b) => a.timestamp - b.timestamp);
@@ -115,11 +121,13 @@ export function computeScore(session: DrivingSession): SessionScore {
   if (speedScore === 100) observations.push('Speed was well managed throughout.');
   if (stopScore === 100 && session.stopEvents.length > 0) observations.push('Good compliance at stop signs and crossings.');
   if (session.brakingEvents.length > 0) observations.push(`${session.brakingEvents.length} harsh braking event${session.brakingEvents.length > 1 ? 's' : ''} detected — aim for smoother, progressive braking.`);
+  const justifiedDeviations = session.navigationEvents.filter((e) => e.justified).length;
+  if (justifiedDeviations > 0) observations.push('Adapted the route for a good reason and explained it clearly — that judgement counts in your favour on the real test.');
 
   if (immediateFailCount > 0) improvements.push(`Speed exceeded the limit significantly on ${immediateFailCount} occasion${immediateFailCount > 1 ? 's' : ''} — this would be an immediate fail on the real test.`);
   if (criticalCount > 0) improvements.push(`Speed was marginally over the limit on ${criticalCount} occasion${criticalCount > 1 ? 's' : ''}.`);
   if (stopScore < 80) improvements.push('Practice coming to a complete stop at stop signs and railway crossings.');
-  if (navScore < 80) improvements.push(`Navigation instructions were not followed on ${session.navigationEvents.length} occasion${session.navigationEvents.length > 1 ? 's' : ''}.`);
+  if (navScore < 80) improvements.push(`Navigation instructions were not followed on ${unjustifiedNavEvents.length} occasion${unjustifiedNavEvents.length > 1 ? 's' : ''}.`);
   if (hazardScore < 70) improvements.push('Work on hazard commentary — use the see-think-do structure.');
   if (knowledgeScore < 70 && session.knowledgeEvents.length > 0) improvements.push('Review NZ road rules, especially give-way rules, speed limits, and roundabout procedures.');
   if (sessionMinutes < 18) improvements.push('Try to complete the full 20-minute session for a thorough assessment.');

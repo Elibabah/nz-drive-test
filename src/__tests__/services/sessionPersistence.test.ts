@@ -111,7 +111,7 @@ describe('row mappers', () => {
     expect(buildSpeedRows(s)[0]).toMatchObject({ speed_kmh: 63, limit_kmh: 50, severity: 'immediate_fail' });
     expect(buildStopRows(s)[0]).toMatchObject({ type: 'stop_sign', complied: false, lowest_speed_kmh: 12 });
     expect(buildBrakingRows(s)[0]).toMatchObject({ speed_from_kmh: 50, speed_to_kmh: 20, delta_kmh: 30 });
-    expect(buildNavigationRows(s)[0]).toMatchObject({ instruction_given: 'Turn left here.', type: 'wrong_turn' });
+    expect(buildNavigationRows(s)[0]).toMatchObject({ instruction_given: 'Turn left here.', type: 'wrong_turn', justified: false });
   });
 });
 

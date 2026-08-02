@@ -95,9 +95,10 @@ describe('full-session replay', () => {
     expect(reroutes(transcript).map((r) => r.reason)).toEqual(['off_route']);
   });
 
-  it('tells the driver which instruction they missed when going off route', () => {
-    const offRouteMsg = speaks(transcript).find((s) => s.text.startsWith('I asked you to'));
-    expect(offRouteMsg?.text).toBe('I asked you to turn left. I will give you new directions from here.');
+  it('reroutes silently on deviation — no scolding at the moment it happens (MVP-1)', () => {
+    const texts = speaks(transcript).map((s) => s.text);
+    expect(texts.some((t) => t.startsWith('I asked you to'))).toBe(false);
+    expect(texts.some((t) => t.includes('off route'))).toBe(false);
   });
 
   it('records the speeding violation and the wrong turn on the session', () => {
