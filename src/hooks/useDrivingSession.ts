@@ -8,6 +8,7 @@ import { speak, stopSpeaking } from '../services/instructor';
 import { destroyVoice } from '../services/voiceRecognition';
 import { checkpointSession } from '../services/sessionPersistence';
 import { fetchRoadData } from '../services/osmRoadData';
+import { pickValidDestination } from '../services/destinationValidation';
 import { getCurrentUserId } from '../services/supabase';
 import { isTTSPlaying } from '../services/audioState';
 import {
@@ -99,14 +100,20 @@ export function useDrivingSession(userId: string) {
 
   // ─── Command execution (the adapter side of the engine contract) ─────────────
 
-  const performReroute = useCallback(async (_reason: RerouteReason) => {
+  const performReroute = useCallback(async (reason: RerouteReason) => {
     const engine = engineRef.current;
     const origin = currentPositionRef.current;
-    const destination = sessionDestinationRef.current;
+    let destination = sessionDestinationRef.current;
     if (!engine || !origin || !destination) { engine?.rerouteFailed(); return; }
 
     setIsRerouting(true);
     try {
+      if (reason === 'destination_reached') {
+        // The session continues — pick a fresh validated destination rather
+        // than routing back to the one just reached.
+        destination = (await pickValidDestination(origin, 5)) ?? getDestinationAhead(origin, randomBearing(), 5);
+        sessionDestinationRef.current = destination;
+      }
       const newRoute = await rerouteFromPosition(origin, destination, GOOGLE_MAPS_API_KEY);
       for (const cmd of engine.applyReroute(newRoute.steps)) {
         if (cmd.type === 'askDeviation') {
@@ -186,9 +193,11 @@ export function useDrivingSession(userId: string) {
 
       const devDestLat = process.env.EXPO_PUBLIC_DEV_DEST_LAT;
       const devDestLng = process.env.EXPO_PUBLIC_DEV_DEST_LNG;
+      // Destination snapped to an urban street via Overpass (MVP-1) — falls
+      // back to the raw random bearing when Overpass is unreachable.
       const destination = devDestLat && devDestLng
         ? { latitude: parseFloat(devDestLat), longitude: parseFloat(devDestLng) }
-        : getDestinationAhead(coords, randomBearing(), 5);
+        : (await pickValidDestination(coords, 5)) ?? getDestinationAhead(coords, randomBearing(), 5);
       sessionDestinationRef.current = destination;
 
       const routeData = await getRoute(coords, destination, GOOGLE_MAPS_API_KEY);

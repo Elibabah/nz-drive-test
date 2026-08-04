@@ -33,6 +33,13 @@ jest.mock('../../services/voiceRecognition', () => ({
 jest.mock('../../services/claudeFeedback', () => ({
   evaluateHazardResponse: jest.fn().mockResolvedValue({ quality: 'good', feedback: 'OK' }),
   evaluateKnowledgeResponse: jest.fn().mockResolvedValue({ quality: 'correct', feedback: 'OK' }),
+  evaluateDeviationResponse: jest.fn().mockResolvedValue({ classification: 'justified', feedback: 'OK' }),
+}));
+
+// null → startSession falls back to the raw random-bearing destination,
+// keeping the route fetch as the only network call the test needs to mock.
+jest.mock('../../services/destinationValidation', () => ({
+  pickValidDestination: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('../../services/supabase', () => ({
