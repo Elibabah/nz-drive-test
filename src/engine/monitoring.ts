@@ -68,11 +68,21 @@ const CP_SUPPRESS_BRAKING_M = 80;
 
 // ─── Monitor ──────────────────────────────────────────────────────────────────
 
+// NZTA speed thresholds (Full Licence test guide, see docs/nzta-error-mapping.md):
+// ≥10 km/h over for any duration, or ≥5 km/h over for ≥5 s → immediate fail;
+// 5–10 km/h over that ends within 5 s → critical error, reported when the
+// incident ends (its class isn't knowable until then).
 interface SpeedState {
   overLimitSince: number | null;
-  warnedForCurrentIncident: boolean;
+  immediateFlagged: boolean;
   lastWarnedSpeedKmh: number;
+  peakSpeedKmh: number;
+  limitAtIncidentKmh: number;
 }
+
+const EMPTY_SPEED_STATE: SpeedState = {
+  overLimitSince: null, immediateFlagged: false, lastWarnedSpeedKmh: 0, peakSpeedKmh: 0, limitAtIncidentKmh: 0,
+};
 
 interface StopState {
   requirement: StopRequirement;
@@ -86,7 +96,7 @@ interface PedestrianState {
 }
 
 export class DrivingMonitor {
-  private speedState: SpeedState = { overLimitSince: null, warnedForCurrentIncident: false, lastWarnedSpeedKmh: 0 };
+  private speedState: SpeedState = { ...EMPTY_SPEED_STATE };
   private stopState: StopState | null = null;
   private pedestrianState: PedestrianState | null = null;
   private brakingPrevSpeedKmh = 0;
@@ -108,7 +118,7 @@ export class DrivingMonitor {
   }
 
   reset(): void {
-    this.speedState = { overLimitSince: null, warnedForCurrentIncident: false, lastWarnedSpeedKmh: 0 };
+    this.speedState = { ...EMPTY_SPEED_STATE };
     this.stopState = null;
     this.pedestrianState = null;
     this.brakingPrevSpeedKmh = 0;
@@ -174,29 +184,39 @@ export class DrivingMonitor {
       }
     });
 
-    // ── Speed monitoring ─────────────────────────────────────────────────────
+    // ── Speed monitoring (NZTA thresholds) ───────────────────────────────────
     const overBy = speedKmh - limitKmh;
+    const s = this.speedState;
 
-    if (overBy > 10) {
-      if (!this.speedState.warnedForCurrentIncident || this.speedState.lastWarnedSpeedKmh < speedKmh) {
-        const duration = this.speedState.overLimitSince ? (nowMs - this.speedState.overLimitSince) / 1000 : 0;
-        result.speedWarning = { text: 'You must reduce your speed immediately.', severity: 'immediate_fail', speedKmh, limitKmh, duration };
-        this.speedState.warnedForCurrentIncident = true;
-        this.speedState.lastWarnedSpeedKmh = speedKmh;
+    if (overBy >= 5) {
+      if (!s.overLimitSince) {
+        s.overLimitSince = nowMs;
+        s.limitAtIncidentKmh = limitKmh;
       }
-      if (!this.speedState.overLimitSince) this.speedState.overLimitSince = nowMs;
-    } else if (overBy > 5) {
-      if (!this.speedState.overLimitSince) this.speedState.overLimitSince = nowMs;
-      const elapsed = (nowMs - this.speedState.overLimitSince) / 1000;
-      if (elapsed > 3 && !this.speedState.warnedForCurrentIncident) {
-        result.speedWarning = { text: 'Reduce your speed — you are slightly over the limit.', severity: 'critical', speedKmh, limitKmh, duration: elapsed };
-        this.speedState.warnedForCurrentIncident = true;
-        this.speedState.lastWarnedSpeedKmh = speedKmh;
+      s.peakSpeedKmh = Math.max(s.peakSpeedKmh, speedKmh);
+      const elapsed = (nowMs - s.overLimitSince) / 1000;
+      // ≥10 over at any moment, or ≥5 over sustained for 5 s → immediate fail
+      if (overBy >= 10 || elapsed >= 5) {
+        if (!s.immediateFlagged || s.lastWarnedSpeedKmh < speedKmh) {
+          result.speedWarning = { text: 'You must reduce your speed immediately.', severity: 'immediate_fail', speedKmh, limitKmh, duration: elapsed };
+          s.immediateFlagged = true;
+          s.lastWarnedSpeedKmh = speedKmh;
+        }
       }
-    } else {
-      this.speedState.overLimitSince = null;
-      this.speedState.warnedForCurrentIncident = false;
-      this.speedState.lastWarnedSpeedKmh = 0;
+    } else if (s.overLimitSince) {
+      // Incident over. If it never reached immediate-fail territory it was a
+      // brief 5–10 over → critical error, reportable only now.
+      if (!s.immediateFlagged) {
+        const elapsed = (nowMs - s.overLimitSince) / 1000;
+        result.speedWarning = {
+          text: 'Watch your speed — you went over the limit briefly back there.',
+          severity: 'critical',
+          speedKmh: s.peakSpeedKmh,
+          limitKmh: s.limitAtIncidentKmh,
+          duration: elapsed,
+        };
+      }
+      this.speedState = { ...EMPTY_SPEED_STATE };
     }
 
     // ── Stop sign / railway crossing monitoring (legacy text path) ───────────

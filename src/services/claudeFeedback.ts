@@ -241,11 +241,21 @@ export async function generateSessionFeedback(session: DrivingSession): Promise<
         return `${i + 1}. [${e.trigger}] "${e.question}"${evalText}`;
       }).join('\n');
 
+  const verdict = score?.verdict;
+  const verdictSummary = verdict
+    ? `${verdict.result.toUpperCase()} — ${verdict.immediateFailErrors.length} immediate-fail error(s), ${verdict.criticalErrors.length} critical error(s) (NZTA model: any immediate-fail, or more than one critical, fails the test)${
+        [...verdict.immediateFailErrors, ...verdict.criticalErrors].map((e) => `\n- ${e.kind === 'immediate_fail' ? 'IMMEDIATE FAIL' : 'CRITICAL'}: ${e.description}`).join('')
+      }`
+    : 'Not computed for this session.';
+
   const prompt = `You are an expert NZ driving instructor reviewing a learner's 20-minute practice session for the Class 1 Full Licence test.
+
+Test verdict (NZTA error model — this is the headline; open the debrief with it):
+${verdictSummary}
 
 Session data:
 - Duration: ${durationMin} minutes | Distance: ${distKm} km | Average speed: ${Math.round(averageSpeed)} km/h
-- Overall score: ${score?.overall ?? 'N/A'}/100
+- Progress score (secondary metric): ${score?.overall ?? 'N/A'}/100
 
 Scores breakdown:
 - Hazard awareness: ${score?.hazardAwareness ?? 'N/A'}/100
@@ -273,7 +283,7 @@ Navigation:
 ${navSummary}
 
 Write a warm, specific, actionable debrief in under 320 words. Structure:
-1. Opening (1-2 sentences, encouraging)
+1. Opening (1-2 sentences): state the verdict plainly — "you would have passed/failed today" — then encourage
 2. What went well (specific)
 3. Areas to work on — reference the actual events above (be specific, e.g. "At the stop sign you were still doing X km/h")
 4. Top 2-3 things to practise before the test

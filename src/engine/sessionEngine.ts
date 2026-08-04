@@ -174,7 +174,9 @@ export class SessionEngine {
 
     if (m.speedWarning) {
       const { text, severity, speedKmh: spd, limitKmh, duration } = m.speedWarning;
-      commands.push({ type: 'speak', text, priority: 'safety' });
+      // An active immediate-fail overspeed must interrupt; a critical is
+      // reported after the incident ended, so it can wait its turn.
+      commands.push({ type: 'speak', text, priority: severity === 'immediate_fail' ? 'safety' : 'coaching' });
       this.log.recordSpeedViolation(coord, spd, limitKmh, severity, duration, nowMs);
     }
 

@@ -11,6 +11,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../src/services/supabase';
 import MarkdownText from '../../src/components/MarkdownText';
+import type { NZTAVerdict } from '../../src/types';
 
 interface EventLogEntry {
   relativeMinute: number;
@@ -36,6 +37,7 @@ interface SessionData {
     observations: string[];
     improvements: string[];
     eventLog?: EventLogEntry[];
+    verdict?: NZTAVerdict;
   } | null;
   feedback: string | null;
   status: string;
@@ -111,6 +113,9 @@ export default function FeedbackScreen() {
             })}
           </Text>
         </View>
+
+        {/* NZTA verdict (ADR-0005) — the headline result */}
+        {score?.verdict && <VerdictCard verdict={score.verdict} />}
 
         {/* Overall Score */}
         {score && (
@@ -221,6 +226,34 @@ export default function FeedbackScreen() {
   );
 }
 
+function VerdictCard({ verdict }: { verdict: NZTAVerdict }) {
+  const pass = verdict.result === 'pass';
+  const color = pass ? '#4ade80' : '#f87171';
+  const errors = [...verdict.immediateFailErrors, ...verdict.criticalErrors];
+  const tally = [
+    `${verdict.immediateFailErrors.length} immediate-fail error${verdict.immediateFailErrors.length === 1 ? '' : 's'}`,
+    `${verdict.criticalErrors.length} critical error${verdict.criticalErrors.length === 1 ? '' : 's'}`,
+  ].join(' · ');
+
+  return (
+    <View style={[styles.verdictCard, { borderColor: color }]}>
+      <Text style={[styles.verdictResult, { color }]}>{pass ? 'PASS' : 'FAIL'}</Text>
+      <Text style={styles.verdictTally}>{tally}</Text>
+      {errors.map((e, i) => (
+        <View key={i} style={styles.verdictErrorRow}>
+          <Text style={[styles.verdictErrorKind, { color: e.kind === 'immediate_fail' ? '#f87171' : '#fbbf24' }]}>
+            {e.kind === 'immediate_fail' ? 'IF' : 'CE'}
+          </Text>
+          <Text style={styles.verdictErrorText}>{e.description}</Text>
+        </View>
+      ))}
+      <Text style={styles.verdictNote}>
+        Verdict per the NZTA error model, on what the app can observe: speed, compulsory stops and crossings, directions. Mirror checks, signalling, road position and vehicle control are not assessed.
+      </Text>
+    </View>
+  );
+}
+
 function StatCard({ label, value, icon }: { label: string; value: string; icon: string }) {
   return (
     <View style={styles.statCard}>
@@ -295,6 +328,20 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 8,
   },
+  verdictCard: {
+    backgroundColor: '#131929',
+    borderRadius: 16,
+    borderWidth: 2,
+    padding: 20,
+    alignItems: 'center',
+    gap: 8,
+  },
+  verdictResult: { fontSize: 40, fontWeight: '900', letterSpacing: 2 },
+  verdictTally: { color: 'rgba(255,255,255,0.75)', fontSize: 14, fontWeight: '600' },
+  verdictErrorRow: { flexDirection: 'row', gap: 8, alignSelf: 'stretch', alignItems: 'flex-start', paddingTop: 4 },
+  verdictErrorKind: { fontSize: 12, fontWeight: '800', width: 22, textAlign: 'center', marginTop: 2 },
+  verdictErrorText: { flex: 1, color: 'rgba(255,255,255,0.75)', fontSize: 13, lineHeight: 19 },
+  verdictNote: { color: 'rgba(255,255,255,0.5)', fontSize: 11, lineHeight: 16, textAlign: 'center', paddingTop: 6 },
   scoreCircle: {
     width: 120,
     height: 120,

@@ -1,9 +1,10 @@
 import { DrivingSession, EventLogEntry } from '../types';
+import { computeVerdict } from './nztaVerdict';
 
 export type SessionScore = NonNullable<DrivingSession['score']>;
 
-// Weighted progress score + event timeline. NZTA-aligned pass/fail verdict is
-// the next MVP-1 step (ADR-0005); this score then becomes a secondary metric.
+// The verdict (ADR-0005) is the headline result: PASS/FAIL from NZTA error
+// categories. The weighted progress score remains as a secondary trend metric.
 
 export function computeScore(session: DrivingSession): SessionScore {
   const sessionStartMs = session.startTime;
@@ -132,5 +133,5 @@ export function computeScore(session: DrivingSession): SessionScore {
   if (knowledgeScore < 70 && session.knowledgeEvents.length > 0) improvements.push('Review NZ road rules, especially give-way rules, speed limits, and roundabout procedures.');
   if (sessionMinutes < 18) improvements.push('Try to complete the full 20-minute session for a thorough assessment.');
 
-  return { overall, hazardAwareness: hazardScore, knowledgeScore, speedCompliance: speedScore, stopCompliance: stopScore, navigationCompliance: navScore, sessionCompletion, observations, improvements, eventLog };
+  return { overall, hazardAwareness: hazardScore, knowledgeScore, speedCompliance: speedScore, stopCompliance: stopScore, navigationCompliance: navScore, sessionCompletion, observations, improvements, eventLog, verdict: computeVerdict(session) };
 }

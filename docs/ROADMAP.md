@@ -40,14 +40,14 @@ No new user-facing features. The app does what it does today, but safely and rel
 - ✅ **Navigation that actually guides** (2026-07-22, from field test): announcements now target the *next maneuver* (`steps[1]` at `steps[0]`'s end — Google's step model puts the turn at the step *start*), and step completion advances locally instead of refetching a route per step (which the 20 s debounce silenced). Field bug: Sam never gave directions.
 - ✅ **Real road data from OSM** (2026-07-23, ADR-0004): Overpass corridor prefetched per route — `maxspeed` zones, stop signs, traffic signals, give-way, level/pedestrian crossings — consumed by the engine as typed control points evaluated by GPS proximity. Signals suppress the unexpected-stop/braking nudges (red-light field bug). Graceful fallback to v1 heuristics when Overpass is down. *(Pending field validation on a real drive.)*
 - ✅ **Deviation evaluation flow** (2026-08-02): deviation → silent reroute (the immediate scolding is gone) → engine emits `askDeviation` once the new route is applied → examiner asks why → Claude classifies `justified` (road closed, obstruction, safety — no penalty, `navigation_events.justified`, positive judgement note) vs `manoeuvring error` (mild penalty kept, same as the AI-unreachable fallback). Engine-tested in `engine/__tests__/deviation.test.ts`. *(Pending field validation.)*
-- **NZTA-aligned scoring**: model critical errors and immediate-fail errors per the official assessment guide; produce a pass/fail verdict plus the existing numeric progress score as a secondary metric.
+- ✅ **NZTA-aligned scoring** (2026-08-04, ADR-0005): `engine/nztaVerdict.ts` maps recorded events to official categories (fail = any immediate-fail error or >1 critical); speed monitor realigned to the official thresholds (≥10 km/h over any duration or ≥5 for ≥5 s = immediate fail; brief 5–10 over = critical, reported at incident end). Sourced mapping table in [nzta-error-mapping.md](nzta-error-mapping.md); verdict declares what is/isn't assessed. PASS/FAIL card on the feedback screen; debrief opens with the verdict. Numeric score retained as secondary trend metric.
 - Destination/route validation: destination snapped to the urban road network (no sea, no motorway, no unformed roads).
 
 **Exit criteria**
 - [ ] A replayed real-drive GPS track produces identical event streams across runs.
 - [ ] Driving past a mapped stop sign at 15 km/h produces a stop violation; a compliant full stop produces a compliant event.
 - [x] A deviation with a spoken justification ("the street was closed") does not reduce the navigation score. *(2026-08-02: unit-tested end-to-end in the engine; field validation pending)*
-- [ ] Session summary shows PASS / FAIL with the error tally, mirroring NZTA categories.
+- [x] Session summary shows PASS / FAIL with the error tally, mirroring NZTA categories. *(2026-08-04: verdict computed in the engine, unit-tested, rendered on the feedback screen with the not-assessed disclaimer)*
 
 ## MVP-2 — Truly hands-free
 

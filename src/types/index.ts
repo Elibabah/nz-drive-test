@@ -143,6 +143,33 @@ export interface DrivingSession {
   status: 'active' | 'completed' | 'abandoned';
 }
 
+// ─── NZTA-aligned verdict (ADR-0005) ─────────────────────────────────────────
+// Categories and thresholds from the official Full Licence test guide —
+// sourced mapping in docs/nzta-error-mapping.md.
+
+export type NZTAErrorCategory =
+  | 'excessive_speed'      // immediate fail: ≥10 km/h over any duration, or ≥5 km/h over for ≥5 s
+  | 'failure_to_stop'      // immediate fail: no complete stop at a stop sign / railway crossing
+  | 'failure_to_give_way'  // immediate fail: did not give way at a pedestrian crossing
+  | 'too_fast';            // critical: 5–10 km/h over for under 5 s
+
+export interface NZTAError {
+  category: NZTAErrorCategory;
+  kind: 'immediate_fail' | 'critical';
+  description: string;
+  timestamp: number;
+}
+
+export interface NZTAVerdict {
+  result: 'pass' | 'fail';
+  immediateFailErrors: NZTAError[];
+  criticalErrors: NZTAError[];
+  /** Aspects of the official assessment this app observes. */
+  assessed: string[];
+  /** Official categories that need sensors the app doesn't have. */
+  notAssessed: string[];
+}
+
 export interface SessionScore {
   overall: number;
   hazardAwareness: number;
@@ -154,6 +181,8 @@ export interface SessionScore {
   observations: string[];
   improvements: string[];
   eventLog: EventLogEntry[];
+  /** PASS/FAIL per the NZTA error model — absent on sessions scored before ADR-0005 landed. */
+  verdict?: NZTAVerdict;
 }
 
 export interface InstructorInstruction {

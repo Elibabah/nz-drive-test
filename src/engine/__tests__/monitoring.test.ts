@@ -110,7 +110,7 @@ describe('speed monitoring', () => {
     expect(drive(50, steps).speedWarning).toBeNull();
   });
 
-  it('no warning when 5 km/h over (within buffer)', () => {
+  it('no warning yet at 5 km/h over — the incident starts silently', () => {
     expect(drive(55, steps).speedWarning).toBeNull();
   });
 
@@ -138,6 +138,36 @@ describe('speed monitoring', () => {
     drive(61, steps);
     drive(50, steps); // back under — clears state
     expect(drive(61, steps).speedWarning).not.toBeNull();
+  });
+
+  // NZTA thresholds (full licence test guide): ≥10 over any duration or
+  // ≥5 over for ≥5 s → immediate fail; 5–10 over ending within 5 s → critical.
+
+  it('immediate_fail at exactly 10 km/h over (NZTA: ≥10, any duration)', () => {
+    expect(drive(60, steps).speedWarning?.severity).toBe('immediate_fail');
+  });
+
+  it('immediate_fail when 5–10 over is sustained for 5 s', () => {
+    expect(drive(57, steps).speedWarning).toBeNull();       // incident starts
+    expect(drive(57, steps).speedWarning).toBeNull();       // 2 s over
+    expect(drive(57, steps).speedWarning).toBeNull();       // 4 s over
+    const result = drive(57, steps);                        // 6 s over → sustained
+    expect(result.speedWarning?.severity).toBe('immediate_fail');
+    expect(drive(57, steps).speedWarning).toBeNull();       // no re-warn
+  });
+
+  it('critical error reported when a brief 5–10 over ends within 5 s, with peak speed', () => {
+    drive(56, steps);
+    drive(58, steps);
+    const result = drive(50, steps); // back under after ~4 s
+    expect(result.speedWarning?.severity).toBe('critical');
+    expect(result.speedWarning?.speedKmh).toBe(58); // peak, not final
+    expect(result.speedWarning?.limitKmh).toBe(50);
+  });
+
+  it('no critical error on incident end if it already went immediate_fail', () => {
+    drive(61, steps);
+    expect(drive(50, steps).speedWarning).toBeNull();
   });
 });
 

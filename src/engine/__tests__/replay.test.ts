@@ -115,6 +115,14 @@ describe('full-session replay', () => {
     expect(session.status).toBe('completed');
   });
 
+  it('issues a FAIL verdict for the speeding burst; the deviation does not count (ADR-0005)', () => {
+    const verdict = session.score!.verdict!;
+    expect(verdict.result).toBe('fail');
+    expect(verdict.immediateFailErrors).toHaveLength(1);
+    expect(verdict.immediateFailErrors[0].category).toBe('excessive_speed');
+    expect(verdict.criticalErrors).toHaveLength(0);
+  });
+
   it('is deterministic: an identical replay produces an identical transcript and score', () => {
     const second = runReplay();
     expect(second.transcript).toEqual(transcript);
@@ -176,6 +184,12 @@ describe('replay with road data: stop sign + traffic light', () => {
     expect(session.stopEvents[0].type).toBe('stop_sign');
     expect(session.stopEvents[0].complied).toBe(false);
     expect(session.score!.stopCompliance).toBe(0);
+  });
+
+  it('the roll-through is an immediate-fail failure_to_stop in the verdict (ADR-0005)', () => {
+    const verdict = session.score!.verdict!;
+    expect(verdict.result).toBe('fail');
+    expect(verdict.immediateFailErrors.map((e) => e.category)).toContain('failure_to_stop');
   });
 
   it('does NOT scold the driver for waiting at the red light (field bug 2026-07-22)', () => {
