@@ -104,7 +104,7 @@ Found during MVP-0 field testing (July 2026). Each item is self-contained; none 
 | TTS fallback telemetry | Proxy TTS failures silently fall back to the robotic on-device voice (observed once in field). Log occurrences (client event or `ai_usage` status) to measure frequency | MVP-4 (telemetry) |
 | npm audit | 26 vulnerabilities reported (2 critical) at last install — triage which are real for a client app | MVP-4 |
 | jest-expo 55 vs expo 54 | Version mismatch works but is accidental; align on next SDK upgrade | Next SDK bump |
-| `claude-sonnet-4-6` model id | Debrief model pinned in client + proxy allowlist; review against current Anthropic lineup (sonnet-5) when touching aiTransport | MVP-1 (while in the code) |
+| ~~`claude-sonnet-4-6` model id~~ | ✅ 2026-08-04: debrief upgraded to `claude-sonnet-5` (intro pricing through 2026-08-31); token budget raised to 2000/2048 client/proxy because Sonnet 5's default adaptive thinking shares `max_tokens`; `sonnet-4-6` kept in the proxy allowlist for app bundles already in the field. **Requires `supabase functions deploy ai-proxy`** | Done |
 | ~~Decision-questions dead code~~ | ✅ 2026-08-02: wired — post-reroute deviation questions record `DecisionEvent` (trigger `off_route`) and drive the justified/manoeuvring-error classification | Done |
 
 ## Decision log

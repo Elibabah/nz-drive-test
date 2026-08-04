@@ -25,6 +25,9 @@ const MAX_CALLS_PER_HOUR = 120;
 
 const ALLOWED_ANTHROPIC_MODELS = new Set([
   "claude-haiku-4-5-20251001",
+  // Debrief model. sonnet-4-6 stays allowed: app bundles already in the field
+  // have it pinned — remove only after those versions age out.
+  "claude-sonnet-5",
   "claude-sonnet-4-6",
 ]);
 
@@ -84,7 +87,9 @@ Deno.serve(async (req) => {
     if (!ALLOWED_ANTHROPIC_MODELS.has(model)) {
       return json(400, { error: `model not allowed: ${model}` });
     }
-    const maxTokens = Math.min(Number(payload.max_tokens ?? 120), 1024);
+    // 2048 leaves room for Sonnet 5's default adaptive thinking, which shares
+    // the max_tokens budget with the visible debrief text
+    const maxTokens = Math.min(Number(payload.max_tokens ?? 120), 2048);
     upstream = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {

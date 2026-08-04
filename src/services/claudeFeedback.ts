@@ -2,10 +2,10 @@ import { DrivingSession } from '../types';
 import { callAIProxy } from './aiTransport';
 
 const MODEL_EVAL = 'claude-haiku-4-5-20251001';     // scoring tasks: fast, cheap, sufficient
-const MODEL_FEEDBACK = 'claude-sonnet-4-6';          // narrative feedback: quality matters
+const MODEL_FEEDBACK = 'claude-sonnet-5';            // narrative feedback: quality matters
 
 async function callClaude(prompt: string, maxTokens: number, model = MODEL_EVAL): Promise<string> {
-  // The end-of-session debrief (Sonnet, 700 tokens) can exceed the default 10 s
+  // The end-of-session debrief (Sonnet, 2000 tokens incl. thinking) can exceed the default 10 s
   const timeoutMs = model === MODEL_FEEDBACK ? 30_000 : 10_000;
   const response = await callAIProxy('anthropic', {
     model,
@@ -291,5 +291,7 @@ Write a warm, specific, actionable debrief in under 320 words. Structure:
 
 Use NZ English spelling. Remember NZ drives on the LEFT. Address the driver directly as "you". Do not use bullet points — write in paragraphs. Plain text only: no markdown of any kind (no ##, no **, no numbered headings) — the text is displayed as-is.`;
 
-  return callClaude(prompt, 700, MODEL_FEEDBACK);
+  // 2000 tokens: Sonnet 5 thinks by default and thinking shares this budget
+  // with the ~320-word debrief text
+  return callClaude(prompt, 2000, MODEL_FEEDBACK);
 }
